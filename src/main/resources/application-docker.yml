@@ -3,15 +3,15 @@ spring:
     name: ink-ms-sports
   
   datasource:
-    url: jdbc:mysql://mysql:3306/sports_events_ms?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    password: 
+    url: ${MYSQL_URL:jdbc:mysql://mysql:3306/sports_events_ms?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
   
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    show-sql: ${SHOW_SQL:true}
     properties:
       hibernate:
         format-sql: true
@@ -22,7 +22,7 @@ server:
 
 auth:
   service:
-    url: http://auth-service:3001
+    url: ${AUTH_SERVICE_URL:http://auth-service:3001}
 
 security:
   basic:
@@ -30,8 +30,8 @@ security:
 
 accessibility:
   service:
-    url: http://accessibility-service:3004
+    url: ${ACCESSIBILITY_SERVICE_URL:http://accessibility-service:3004}
 
 logging:
   level:
-    com.inklusport.sports: DEBUG
+    com.inklusport.sports: ${LOG_LEVEL:DEBUG}
