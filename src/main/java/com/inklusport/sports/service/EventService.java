@@ -245,7 +245,8 @@ public class EventService {
                 .location(event.getLocation())
                 .maxCapacity(event.getMaxCapacity())
                 .availableCapacity(event.getAvailableCapacity())
-                .status(event.getStatus().name())
+                .status(event.getStatus() != null ? event.getStatus().name() : null)
+                .createdBy(event.getCreatedBy())
                 .createdAt(event.getCreatedAt())
                 .build();
     }

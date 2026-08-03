@@ -31,6 +31,12 @@ class RegistrationServiceTest {
     @Mock
     private NotificationServiceClient notificationClient;
 
+    @Mock
+    private StaffNotificationService staffNotificationService;
+
+    @Mock
+    private UserIdentityService userIdentityService;
+
     @InjectMocks
     private RegistrationService registrationService;
 

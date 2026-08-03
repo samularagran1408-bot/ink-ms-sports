@@ -40,3 +40,6 @@ users:
 accessibility:
   service:
     url: http://localhost:3004
+
+notifications:
+  admin-emails: ${NOTIFICATION_ADMIN_EMAILS:}

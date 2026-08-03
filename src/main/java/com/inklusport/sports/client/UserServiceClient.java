@@ -14,6 +14,12 @@ public interface UserServiceClient {
     @GetMapping("/api/users/{id}")
     Map<String, Object> getUserById(@PathVariable("id") String id);
 
+    @GetMapping("/api/internal/users/{id}")
+    Map<String, Object> getUserByIdInternal(@PathVariable("id") String id);
+
+    @GetMapping("/api/users/verify/status/{userId}")
+    Map<String, Object> getVerificationStatus(@PathVariable("userId") String userId);
+
     @GetMapping("/api/admin/users/roles-by-email")
     List<String> getUserRoles(@RequestParam("email") String email);
 

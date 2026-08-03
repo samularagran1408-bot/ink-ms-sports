@@ -10,13 +10,16 @@ import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -27,60 +30,99 @@ public class RegistrationService {
     private final EventRegistrationRepository registrationRepository;
     private final EventRepository eventRepository;
     private final NotificationServiceClient notificationClient;
+    private final StaffNotificationService staffNotificationService;
+    private final UserIdentityService userIdentityService;
 
     @Transactional
     public RegistrationResponse registerToEvent(RegistrationRequest request) {
         Event event = eventRepository.findById(request.getEventId())
             .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
 
-        if (registrationRepository.existsByEventIdAndUserId(request.getEventId(), request.getUserId())) {
+        String userId = userIdentityService.resolveCanonicalUserId(request.getUserId());
+        Set<String> aliases = userIdentityService.identityAliases(userId);
+        aliases.add(userId);
+        if (request.getUserId() != null && !request.getUserId().isBlank()) {
+            aliases.add(request.getUserId().trim());
+        }
+
+        boolean alreadyRegistered = aliases.stream()
+                .anyMatch(alias -> registrationRepository.existsByEventIdAndUserId(request.getEventId(), alias));
+        if (alreadyRegistered) {
             throw new IllegalStateException("El usuario ya se encuentra registrado.");
         }
 
-        String userEmail = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        String notifyTarget = userIdentityService.currentPrincipal() != null
+                ? userIdentityService.currentPrincipal()
+                : userId;
 
         EventRegistration registration = new EventRegistration();
         registration.setId(UUID.randomUUID().toString());
         registration.setEventId(request.getEventId());
-        registration.setUserId(userEmail);
+        registration.setUserId(userId);
         registration.setRegistrationDate(LocalDateTime.now());
         registration.setAttended(false);
-        registration.setQrCode("QR_" + UUID.randomUUID().toString());
+        registration.setQrCode("QR_" + UUID.randomUUID());
 
-        String statusMessage; 
+        String statusMessage;
         String notificationType;
         String notificationTitle;
         String notificationBody;
+        boolean confirmed;
 
-        if (event.getAvailableCapacity() > 0) {
-            registration.setWaitlistPosition(null); 
-            
-            event.setAvailableCapacity(event.getAvailableCapacity() - 1);
-            eventRepository.save(event);
-            
+        Integer available = event.getAvailableCapacity();
+        if (available == null) {
+            available = event.getMaxCapacity() != null ? event.getMaxCapacity() : 0;
+            event.setAvailableCapacity(available);
+        }
+
+        if (available > 0) {
+            registration.setWaitlistPosition(null);
+            event.setAvailableCapacity(available - 1);
+            eventRepository.saveAndFlush(event);
+
             statusMessage = "Inscripción confirmada exitosamente. ¡Cupo asegurado!";
             notificationType = "event_registration";
             notificationTitle = "¡Inscripción confirmada!";
             notificationBody = "Te has inscrito correctamente al evento: " + event.getName();
+            confirmed = true;
         } else {
             long personasEnEspera = registrationRepository.countByEventIdAndWaitlistPositionIsNotNull(request.getEventId());
             int nuevaPosicion = (int) personasEnEspera + 1;
             registration.setWaitlistPosition(nuevaPosicion);
-            
+
             statusMessage = "El evento está lleno. Has sido agregado a la lista de espera en la posición: " + nuevaPosicion;
             notificationType = "waitlist_added";
             notificationTitle = "Lista de espera";
             notificationBody = "El evento " + event.getName() + " está lleno. Estás en la posición " + nuevaPosicion + " de la lista de espera.";
+            confirmed = false;
         }
 
-        EventRegistration saved = registrationRepository.save(registration);
+        EventRegistration saved = registrationRepository.saveAndFlush(registration);
 
         if (registration.getWaitlistPosition() != null && registration.getWaitlistPosition() == 1) {
             notifyNewWaitlistFirstPosition(request.getEventId(), saved);
         } else {
-            sendNotification(userEmail, notificationType, notificationTitle, notificationBody, request.getEventId());
+            sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
         }
-        
+
+        notifyOrganizerAboutRegistration(event, notifyTarget, confirmed, registration.getWaitlistPosition());
+
+        if (confirmed && event.getAvailableCapacity() != null && event.getAvailableCapacity() == 0) {
+            staffNotificationService.notifyOrganizer(
+                    event.getCreatedBy(),
+                    "event_full",
+                    "Evento aforo completo",
+                    "El evento \"" + event.getName() + "\" ya no tiene cupos disponibles.",
+                    event.getId()
+            );
+            staffNotificationService.notifyAdmins(
+                    "event_full",
+                    "Evento aforo completo",
+                    "El evento \"" + event.getName() + "\" alcanzó su aforo máximo.",
+                    event.getId()
+            );
+        }
+
         return convertToResponse(saved, statusMessage, event.getName());
     }
 
@@ -91,8 +133,20 @@ public class RegistrationService {
 
         String eventId = currentReg.getEventId();
         Integer posicionEliminada = currentReg.getWaitlistPosition();
+        String cancelledUser = currentReg.getUserId();
+        Event event = eventRepository.findById(eventId).orElse(null);
 
         registrationRepository.delete(currentReg);
+
+        if (event != null) {
+            staffNotificationService.notifyOrganizer(
+                    event.getCreatedBy(),
+                    "event_registration_cancelled",
+                    "Inscripción cancelada",
+                    "El usuario " + cancelledUser + " canceló su inscripción al evento \"" + event.getName() + "\".",
+                    eventId
+            );
+        }
 
         if (posicionEliminada == null) {
             Optional<EventRegistration> nextInLine = registrationRepository
@@ -111,10 +165,10 @@ public class RegistrationService {
                         .findFirstByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
                 newFirstAfterPromotion.ifPresent(next -> notifyNewWaitlistFirstPosition(eventId, next));
             } else {
-                Event event = eventRepository.findById(eventId)
+                Event ev = eventRepository.findById(eventId)
                         .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
-                event.setAvailableCapacity(event.getAvailableCapacity() + 1);
-                eventRepository.save(event);
+                ev.setAvailableCapacity(ev.getAvailableCapacity() + 1);
+                eventRepository.saveAndFlush(ev);
             }
         } else {
             if (posicionEliminada == 1) {
@@ -123,6 +177,31 @@ public class RegistrationService {
                 nextFirst.ifPresent(next -> notifyNewWaitlistFirstPosition(eventId, next));
             }
             reorderWaitlist(eventId);
+        }
+    }
+
+    private void notifyOrganizerAboutRegistration(Event event, String athleteEmail, boolean confirmed, Integer waitlistPos) {
+        if (event.getCreatedBy() == null || event.getCreatedBy().isBlank()) {
+            return;
+        }
+        if (confirmed) {
+            staffNotificationService.notifyOrganizer(
+                    event.getCreatedBy(),
+                    "organizer_new_registration",
+                    "Nueva inscripción en tu evento",
+                    "El usuario " + athleteEmail + " se inscribió al evento \"" + event.getName() + "\". Cupos restantes: "
+                            + event.getAvailableCapacity() + ".",
+                    event.getId()
+            );
+        } else {
+            staffNotificationService.notifyOrganizer(
+                    event.getCreatedBy(),
+                    "organizer_waitlist_joined",
+                    "Nueva persona en lista de espera",
+                    "El usuario " + athleteEmail + " entró a la lista de espera del evento \"" + event.getName()
+                            + "\" (posición " + waitlistPos + ").",
+                    event.getId()
+            );
         }
     }
 
@@ -153,6 +232,17 @@ public class RegistrationService {
                 + getEventName(eventId) + ". ¡Cupo asegurado!";
 
         sendNotification(promotedReg.getUserId(), notificationType, notificationTitle, notificationBody, eventId);
+
+        eventRepository.findById(eventId).ifPresent(event ->
+                staffNotificationService.notifyOrganizer(
+                        event.getCreatedBy(),
+                        "organizer_waitlist_promoted",
+                        "Cupo asignado desde waitlist",
+                        "El usuario " + promotedReg.getUserId() + " pasó de lista de espera a inscrito en \""
+                                + event.getName() + "\".",
+                        eventId
+                )
+        );
     }
 
     @Transactional
@@ -185,7 +275,7 @@ public class RegistrationService {
     private void reorderWaitlist(String eventId) {
         List<EventRegistration> waitlist = registrationRepository
                 .findByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
-        
+
         int currentPosition = 1;
         for (EventRegistration reg : waitlist) {
             reg.setWaitlistPosition(currentPosition);
@@ -195,35 +285,33 @@ public class RegistrationService {
     }
 
     public List<RegistrationResponse> getWaitlistForEvent(String eventId) {
-        /**
-         * Trae a todos los que tienen waitlist_position NO nulo ordenados del 1 en adelante
-         */
         List<EventRegistration> waitlist = registrationRepository
                 .findByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
-        
-        /**
-         * Convierte a RegistrationResponse
-         */
+
         return waitlist.stream()
                 .map(reg -> convertToResponse(reg, "WAITLIST", "Nombre del Evento"))
                 .toList();
     }
 
-    /**
-     * Inscripciones de un usuario (por userId/email en event_registration).
-     * Consumido por ink-ms-ai-assistant para el agente de competencia.
-     */
     @Transactional(readOnly = true)
     public List<RegistrationResponse> getRegistrationsByUser(String userId) {
-        return registrationRepository.findByUserId(userId).stream()
-                .map(reg -> {
-                    String eventName = eventRepository.findById(reg.getEventId())
-                            .map(Event::getName)
-                            .orElse("Evento");
-                    String status = reg.getWaitlistPosition() != null ? "WAITLIST" : "CONFIRMED";
-                    return convertToResponse(reg, status, eventName);
-                })
-                .toList();
+        Set<String> aliases = userIdentityService.identityAliases(userId);
+        Map<String, EventRegistration> unique = new LinkedHashMap<>();
+        for (String alias : aliases) {
+            for (EventRegistration reg : registrationRepository.findByUserId(alias)) {
+                unique.putIfAbsent(reg.getId(), reg);
+            }
+        }
+
+        List<RegistrationResponse> responses = new ArrayList<>();
+        for (EventRegistration reg : unique.values()) {
+            String eventName = eventRepository.findById(reg.getEventId())
+                    .map(Event::getName)
+                    .orElse("Evento");
+            String status = reg.getWaitlistPosition() != null ? "WAITLIST" : "CONFIRMED";
+            responses.add(convertToResponse(reg, status, eventName));
+        }
+        return responses;
     }
 
     private RegistrationResponse convertToResponse(EventRegistration reg, String statusMessage, String eventName) {
@@ -231,7 +319,7 @@ public class RegistrationService {
                 .id(reg.getId())
                 .userId(reg.getUserId())
                 .eventId(reg.getEventId())
-                .eventName(eventName) 
+                .eventName(eventName)
                 .qrCode(reg.getQrCode())
                 .registrationDate(reg.getRegistrationDate())
                 .attended(reg.getAttended())

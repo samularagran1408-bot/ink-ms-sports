@@ -28,9 +28,16 @@ security:
   basic:
     enabled: false
 
+users:
+  service:
+    url: ${USERS_SERVICE_URL:http://users-service:3002}
+
 accessibility:
   service:
     url: ${ACCESSIBILITY_SERVICE_URL:http://accessibility-service:3004}
+
+notifications:
+  admin-emails: ${NOTIFICATION_ADMIN_EMAILS:}
 
 logging:
   level:

@@ -22,6 +22,9 @@ public class SecurityConfig {
     @Bean
     @Profile("docker")
     public SecurityFilterChain filterChainDocker(HttpSecurity http) throws Exception {
+        // En docker se mantiene permitAll a nivel HTTP para facilitar el arranque,
+        // pero el filtro JWT debe correr para resolver el principal/roles reales;
+        // sin eso las sesiones quedan bajo "anonymousUser"/"fallback-id".
         return http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
@@ -29,6 +32,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().permitAll()
                 )
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
@@ -46,6 +50,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/sport-disabilities/**").permitAll()
                         .requestMatchers("/api/events/**").permitAll()
                         .requestMatchers("/api/scheduler/**").permitAll()
+                        .requestMatchers("/api/routines/trainer/**").permitAll()
+                        .requestMatchers("/api/routines/*/registrations").authenticated()
+                        .requestMatchers("/api/routines").permitAll()
+                        .requestMatchers("/api/routines/*").permitAll()
+                        .requestMatchers("/api/routine-registrations/user/**").permitAll()
+                        .requestMatchers("/api/routine-registrations/**").authenticated()
                         .requestMatchers("/api/registrations/user/**").permitAll()
                         .requestMatchers("/api/registrations/**").authenticated()
                         .requestMatchers("/api/waitlist/**").authenticated()

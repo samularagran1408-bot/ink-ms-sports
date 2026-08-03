@@ -36,6 +36,9 @@ class EventReminderServiceTest {
     @Mock
     private NotificationServiceClient notificationClient;
 
+    @Mock
+    private StaffNotificationService staffNotificationService;
+
     @InjectMocks
     private EventReminderService eventReminderService;
 

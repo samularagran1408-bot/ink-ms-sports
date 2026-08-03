@@ -24,6 +24,7 @@ public class EventReminderService {
     private final EventRepository eventRepository;
     private final EventRegistrationRepository registrationRepository;
     private final NotificationServiceClient notificationClient;
+    private final StaffNotificationService staffNotificationService;
 
     /**
      * Ejecuta cada minuto y envía recordatorios para eventos que comienzan dentro de 2 horas.
@@ -75,6 +76,20 @@ public class EventReminderService {
             registration.setReminderSentAt(LocalDateTime.now());
             registrationRepository.save(registration);
         }
+
+        staffNotificationService.notifyOrganizer(
+                event.getCreatedBy(),
+                "organizer_event_reminder",
+                "Tu evento empieza en 2 horas",
+                String.format(
+                        "El evento '%s' comienza a las %s en %s. Hay %d inscritos confirmados.",
+                        event.getName(),
+                        event.getEventTime(),
+                        event.getLocation() != null ? event.getLocation() : "sede por confirmar",
+                        registrations.size()
+                ),
+                event.getId()
+        );
     }
 
     private void sendNotification(String userId, Event event) {

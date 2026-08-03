@@ -18,7 +18,18 @@ public class UserServiceFallback implements UserServiceClient {
         fallback.put("id", id);
         fallback.put("fullName", "Usuario no disponible");
         fallback.put("email", "no-disponible@inklusport.com");
+        fallback.put("trainerQuizPassed", false);
         return fallback;
+    }
+
+    @Override
+    public Map<String, Object> getUserByIdInternal(String id) {
+        return getUserById(id);
+    }
+
+    @Override
+    public Map<String, Object> getVerificationStatus(String userId) {
+        return getUserById(userId);
     }
 
     @Override
@@ -29,10 +40,9 @@ public class UserServiceFallback implements UserServiceClient {
 
     @Override
     public Map<String, String> getUserIdByEmail(String email) {
-        log.warn(" Users MS no disponible. No se pudo obtener ID para: {}", email);
-        Map<String, String> fallback = new HashMap<>();
-        fallback.put("id", "fallback-id");
-        fallback.put("email", email);
-        return fallback;
+        log.warn("Users MS no disponible. No se pudo obtener ID para: {}", email);
+        // No inventar un UUID falso: eso hacía que rutinas/eventos quedaran
+        // asociados a "fallback-id" y desaparecieran al listar por el id real.
+        return new HashMap<>();
     }
 }

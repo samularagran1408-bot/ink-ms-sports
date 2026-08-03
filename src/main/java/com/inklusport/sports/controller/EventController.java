@@ -17,7 +17,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/events")
-@PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER')")
+@PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('COACH') or hasRole('ENTRENADOR')")
 @RequiredArgsConstructor
 public class EventController {
 
@@ -37,7 +37,7 @@ public class EventController {
      * Crea un evento nuevo.
      */
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('COACH') or hasRole('ENTRENADOR')")
     public ResponseEntity<EventResponse> createEvent(@RequestBody EventRequest request) {
         return ResponseEntity.ok(eventService.createEvent(request));
     }
