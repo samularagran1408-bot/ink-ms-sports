@@ -45,4 +45,10 @@ public class UserServiceFallback implements UserServiceClient {
         // asociados a "fallback-id" y desaparecieran al listar por el id real.
         return new HashMap<>();
     }
+
+    @Override
+    public List<String> getEmailsByRole(String role) {
+        log.warn("Users MS no disponible. Sin emails para rol {}", role);
+        return List.of();
+    }
 }

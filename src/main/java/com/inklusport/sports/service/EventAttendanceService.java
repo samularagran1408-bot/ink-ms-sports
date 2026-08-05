@@ -19,10 +19,15 @@ public class EventAttendanceService {
 
     private final EventAttendanceRepository eventAttendanceRepository;
     private final EventRegistrationRepository eventRegistrationRepository;
+    private final QuizEligibilityService quizEligibilityService;
 
+    /**
+     * Registra asistencia de un inscrito; exige quiz de staff (organizador o entrenador).
+     */
     @Transactional
     public String recordAttendance(AttendanceRequest request) {
-        
+        quizEligibilityService.assertCurrentStaffQuizPassed();
+
         /**
          * Validar que la inscripción exista
          */

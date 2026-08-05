@@ -108,17 +108,14 @@ public class RegistrationService {
         notifyOrganizerAboutRegistration(event, notifyTarget, confirmed, registration.getWaitlistPosition());
 
         if (confirmed && event.getAvailableCapacity() != null && event.getAvailableCapacity() == 0) {
+            /**
+             * Fan-out a admins incluido en notifyOrganizer
+             */
             staffNotificationService.notifyOrganizer(
                     event.getCreatedBy(),
                     "event_full",
                     "Evento aforo completo",
                     "El evento \"" + event.getName() + "\" ya no tiene cupos disponibles.",
-                    event.getId()
-            );
-            staffNotificationService.notifyAdmins(
-                    "event_full",
-                    "Evento aforo completo",
-                    "El evento \"" + event.getName() + "\" alcanzó su aforo máximo.",
                     event.getId()
             );
         }

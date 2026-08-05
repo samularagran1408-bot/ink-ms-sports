@@ -25,4 +25,7 @@ public interface UserServiceClient {
 
     @GetMapping("/api/internal/users/id-by-email")
     Map<String, String> getUserIdByEmail(@RequestParam("email") String email);
+
+    @GetMapping("/api/internal/users/emails-by-role")
+    List<String> getEmailsByRole(@RequestParam("role") String role);
 }

@@ -29,6 +29,7 @@ public class TrainingRoutineService {
     private final SportRepository sportRepository;
     private final UserServiceClient userServiceClient;
     private final UserIdentityService userIdentityService;
+    private final QuizEligibilityService quizEligibilityService;
 
     @Transactional(readOnly = true)
     public List<RoutineResponse> listPublished() {
@@ -55,9 +56,13 @@ public class TrainingRoutineService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Crea una rutina en borrador; exige quiz de entrenador aprobado (salvo admin).
+     */
     @Transactional
     public RoutineResponse create(RoutineRequest request) {
         String trainerId = userIdentityService.resolveTrainerId(request.getTrainerId());
+        quizEligibilityService.assertTrainerQuizPassed(trainerId);
         Integer sportId = null;
         if (request.getSportId() != null) {
             Sport sport = sportRepository.findById(request.getSportId())
@@ -84,12 +89,16 @@ public class TrainingRoutineService {
         return toResponse(routineRepository.save(routine));
     }
 
+    /**
+     * Actualiza una rutina del entrenador dueño; exige quiz de entrenador aprobado.
+     */
     @Transactional
     public RoutineResponse update(String id, RoutineRequest request) {
         TrainingRoutine routine = routineRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Rutina no encontrada"));
 
         assertOwner(routine);
+        quizEligibilityService.assertTrainerQuizPassed(routine.getTrainerId());
 
         if (request.getName() != null && !request.getName().isBlank()) {
             routine.setName(request.getName());
@@ -127,65 +136,21 @@ public class TrainingRoutineService {
     }
 
     @Transactional
+    /**
+     * Publica una rutina; exige ownership y quiz de entrenador aprobado.
+     */
     public RoutineResponse publish(String id) {
         TrainingRoutine routine = routineRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Rutina no encontrada"));
 
         assertOwner(routine);
-        assertTrainerVerified(routine.getTrainerId());
+        quizEligibilityService.assertTrainerQuizPassed(routine.getTrainerId());
 
         if (routine.getStatus() == RoutineStatus.archived) {
             throw new IllegalStateException("No se puede publicar una rutina archivada.");
         }
         routine.setStatus(RoutineStatus.published);
         return toResponse(routineRepository.save(routine));
-    }
-
-    private void assertTrainerVerified(String trainerId) {
-        Map<String, Object> user = loadTrainerProfile(trainerId);
-
-        boolean quizPassed = boolFlag(user, "trainerQuizPassed") || boolFlag(user, "trainer_quiz_passed");
-        if (!quizPassed) {
-            throw new IllegalStateException(
-                    "Debes aprobar el quiz de aptitud de entrenador (umbral ≥ 75) "
-                            + "vía POST /api/ai/quiz/trainer/generar y /evaluar antes de publicar rutinas."
-            );
-        }
-    }
-
-    private Map<String, Object> loadTrainerProfile(String trainerId) {
-        Map<String, Object> user = null;
-        try {
-            user = userServiceClient.getVerificationStatus(trainerId);
-        } catch (Exception e) {
-            log.debug("verify/status falló para {}: {}", trainerId, e.getMessage());
-        }
-        if (user == null || user.isEmpty() || !user.containsKey("trainerQuizPassed")) {
-            try {
-                user = userServiceClient.getUserByIdInternal(trainerId);
-            } catch (Exception e) {
-                log.debug("internal user falló para {}: {}", trainerId, e.getMessage());
-            }
-        }
-        if (user == null || user.isEmpty()) {
-            try {
-                user = userServiceClient.getUserById(trainerId);
-            } catch (Exception e) {
-                log.debug("getUserById falló para {}: {}", trainerId, e.getMessage());
-            }
-        }
-        if ((user == null || user.isEmpty()) && trainerId.contains("@")) {
-            try {
-                Map<String, String> byEmail = userServiceClient.getUserIdByEmail(trainerId);
-                String resolved = byEmail != null ? byEmail.get("id") : null;
-                if (resolved != null && !resolved.equals(trainerId)) {
-                    return loadTrainerProfile(resolved);
-                }
-            } catch (Exception e) {
-                log.warn("No se pudo resolver entrenador {}: {}", trainerId, e.getMessage());
-            }
-        }
-        return user != null ? user : Map.of();
     }
 
     private void assertOwner(TrainingRoutine routine) {
@@ -201,7 +166,9 @@ public class TrainingRoutineService {
         String principal = String.valueOf(auth.getPrincipal());
         if (!routine.getTrainerId().equals(principal)
                 && !routine.getTrainerId().equalsIgnoreCase(principal)) {
-            // También aceptar si el principal es email y trainerId es UUID resuelto
+            /**
+             * También aceptar si el principal es email y trainerId es UUID resuelto
+             */
             try {
                 Map<String, String> resolved = userServiceClient.getUserIdByEmail(principal);
                 if (resolved != null && routine.getTrainerId().equals(resolved.get("id"))) {
@@ -221,7 +188,9 @@ public class TrainingRoutineService {
         if ("null".equalsIgnoreCase(trimmed)) {
             return "[]";
         }
-        // MySQL JSON rechaza cadenas vacías; exigir JSON mínimo válido.
+        /**
+         * MySQL JSON rechaza cadenas vacías; exigir JSON mínimo válido.
+         */
         if (!(trimmed.startsWith("[") || trimmed.startsWith("{"))) {
             return "[]";
         }
@@ -271,23 +240,5 @@ public class TrainingRoutineService {
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .build();
-    }
-
-    private static boolean boolFlag(Map<String, Object> map, String key) {
-        if (map == null) {
-            return false;
-        }
-        Object v = map.get(key);
-        if (v instanceof Boolean b) {
-            return b;
-        }
-        return v != null && Boolean.parseBoolean(String.valueOf(v));
-    }
-
-    private static String str(Map<String, Object> map, String key) {
-        if (map == null || map.get(key) == null) {
-            return null;
-        }
-        return String.valueOf(map.get(key));
     }
 }
