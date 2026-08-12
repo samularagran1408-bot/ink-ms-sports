@@ -17,6 +17,9 @@ public class EventResponse {
     private LocalDate eventDate;
     private LocalTime eventTime;
     private String location;
+    private String imageUrl;
+    private Double latitude;
+    private Double longitude;
     private Integer maxCapacity;
     private Integer availableCapacity;
     private String status;

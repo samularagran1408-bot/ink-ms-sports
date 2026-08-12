@@ -1,7 +1,5 @@
 package com.inklusport.sports.service;
 
-import com.inklusport.sports.client.NotificationServiceClient;
-import com.inklusport.sports.dto.NotificationRequest;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.enums.EventStatus;
 import com.inklusport.sports.entity.EventRegistration;
@@ -23,7 +21,6 @@ public class EventReminderService {
 
     private final EventRepository eventRepository;
     private final EventRegistrationRepository registrationRepository;
-    private final NotificationServiceClient notificationClient;
     private final StaffNotificationService staffNotificationService;
 
     /**
@@ -72,7 +69,18 @@ public class EventReminderService {
         log.info("Enviando recordatorios para '{}' a {} usuarios inscritos", event.getName(), registrations.size());
 
         for (EventRegistration registration : registrations) {
-            sendNotification(registration.getUserId(), event);
+            staffNotificationService.notifyUser(
+                    registration.getUserId(),
+                    "event_reminder",
+                    "Recordatorio: Tu evento empieza en 2 horas",
+                    String.format(
+                            "Recuerda que tu evento '%s' comienza a las %s en %s. Falta poco para que empiece. ¡Te esperamos!",
+                            event.getName(),
+                            event.getEventTime().toString(),
+                            event.getLocation() != null ? event.getLocation() : "nuestra sede"
+                    ),
+                    event.getId()
+            );
             registration.setReminderSentAt(LocalDateTime.now());
             registrationRepository.save(registration);
         }
@@ -90,27 +98,5 @@ public class EventReminderService {
                 ),
                 event.getId()
         );
-    }
-
-    private void sendNotification(String userId, Event event) {
-        try {
-            NotificationRequest request = new NotificationRequest();
-            request.setUserId(userId);
-            request.setType("event_reminder");
-            request.setTitle("Recordatorio: Tu evento empieza en 2 horas");
-            request.setBody(String.format(
-                "Recuerda que tu evento '%s' comienza a las %s en %s. Falta poco para que empiece. ¡Te esperamos!",
-                event.getName(),
-                event.getEventTime().toString(),
-                event.getLocation() != null ? event.getLocation() : "nuestra sede"
-            ));
-            request.setEventId(event.getId());
-            request.setPriority("high");
-
-            notificationClient.createNotification(userId, request);
-            log.info("Recordatorio enviado a: {}", userId);
-        } catch (Exception e) {
-            log.error("Error al enviar recordatorio a {}: {}", userId, e.getMessage());
-        }
     }
 }

@@ -33,6 +33,11 @@ public class UserServiceFallback implements UserServiceClient {
     }
 
     @Override
+    public void incrementEventsAttended(String userId) {
+        log.warn("Users MS no disponible. No se pudo incrementar events_attended para: {}", userId);
+    }
+
+    @Override
     public List<String> getUserRoles(String email) {
         log.warn(" Users MS no disponible. Rol por defecto para: {}", email);
         return List.of("USUARIO");

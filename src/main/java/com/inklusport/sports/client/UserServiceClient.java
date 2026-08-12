@@ -3,6 +3,7 @@ package com.inklusport.sports.client;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
@@ -19,6 +20,9 @@ public interface UserServiceClient {
 
     @GetMapping("/api/users/verify/status/{userId}")
     Map<String, Object> getVerificationStatus(@PathVariable("userId") String userId);
+
+    @PostMapping("/api/users/verify/attended/{userId}")
+    void incrementEventsAttended(@PathVariable("userId") String userId);
 
     @GetMapping("/api/admin/users/roles-by-email")
     List<String> getUserRoles(@RequestParam("email") String email);

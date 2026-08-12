@@ -1,7 +1,5 @@
 package com.inklusport.sports.service;
 
-import com.inklusport.sports.client.NotificationServiceClient;
-import com.inklusport.sports.dto.NotificationRequest;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
 import com.inklusport.sports.enums.EventStatus;
@@ -19,6 +17,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,9 +31,6 @@ class EventReminderServiceTest {
 
     @Mock
     private EventRegistrationRepository registrationRepository;
-
-    @Mock
-    private NotificationServiceClient notificationClient;
 
     @Mock
     private StaffNotificationService staffNotificationService;
@@ -53,6 +49,7 @@ class EventReminderServiceTest {
                 .eventTime(LocalTime.of(10, 0))
                 .location("Sede central")
                 .status(EventStatus.active)
+                .createdBy("org-1")
                 .maxCapacity(20)
                 .availableCapacity(20)
                 .build();
@@ -75,21 +72,33 @@ class EventReminderServiceTest {
                 .waitlistPosition(null)
                 .build();
 
-        EventRegistration waitlistRegistration = EventRegistration.builder()
-                .id("reg-2")
-                .userId("user-2")
-                .eventId("event-1")
-                .waitlistPosition(1)
-                .build();
-
         when(eventRepository.findByStatus(EventStatus.active)).thenReturn(List.of(dueEvent, tooFarEvent));
         when(registrationRepository.findByEventIdAndWaitlistPositionIsNullAndReminderSentAtIsNull("event-1"))
                 .thenReturn(List.of(confirmedRegistration));
 
         eventReminderService.sendEventReminders(now);
 
-        verify(notificationClient).createNotification(eq("user-1"), any(NotificationRequest.class));
-        verify(notificationClient, never()).createNotification(eq("user-2"), any(NotificationRequest.class));
+        verify(staffNotificationService).notifyUser(
+                eq("user-1"),
+                eq("event_reminder"),
+                anyString(),
+                anyString(),
+                eq("event-1")
+        );
+        verify(staffNotificationService).notifyOrganizer(
+                eq("org-1"),
+                eq("organizer_event_reminder"),
+                anyString(),
+                anyString(),
+                eq("event-1")
+        );
+        verify(staffNotificationService, never()).notifyUser(
+                eq("user-2"),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString()
+        );
     }
 
     @Test
@@ -113,6 +122,7 @@ class EventReminderServiceTest {
 
         eventReminderService.sendEventReminders(now);
 
-        verify(notificationClient, never()).createNotification(any(), any(NotificationRequest.class));
+        verify(staffNotificationService, never()).notifyUser(any(), any(), any(), any(), any());
+        verify(staffNotificationService, never()).notifyOrganizer(any(), any(), any(), any(), any());
     }
 }

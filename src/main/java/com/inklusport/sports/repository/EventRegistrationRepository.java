@@ -22,6 +22,8 @@ public interface EventRegistrationRepository extends JpaRepository<EventRegistra
     List<EventRegistration> findByEventIdAndWaitlistPositionIsNullAndReminderSentAtIsNull(String eventId);
     
     Optional<EventRegistration> findByUserIdAndEventId(String userId, String eventId);
+
+    Optional<EventRegistration> findByQrCode(String qrCode);
     
     boolean existsByEventIdAndUserId(String eventId, String userId);
     

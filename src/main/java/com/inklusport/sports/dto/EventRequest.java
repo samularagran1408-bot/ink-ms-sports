@@ -29,6 +29,13 @@ public class EventRequest {
 
     private String location;
 
+    /** Opcional; si falta se asigna una foto predeterminada según el deporte. */
+    private String imageUrl;
+
+    /** Coordenadas de Google Maps (Places). */
+    private Double latitude;
+    private Double longitude;
+
     @NotNull(message = "El cupo máximo es obligatorio")
     @Positive(message = "El cupo máximo debe ser mayor a 0")
     private Integer maxCapacity;

@@ -43,6 +43,16 @@ public class Event {
     @Column(length = 255)
     private String location;
 
+    /** Portada del evento (ruta en frontend o URL absoluta). */
+    @Column(name = "image_url", length = 512)
+    private String imageUrl;
+
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     @Column(name = "max_capacity", nullable = false)
     private Integer maxCapacity;
 

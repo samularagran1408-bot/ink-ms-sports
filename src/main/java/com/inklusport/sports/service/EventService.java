@@ -11,6 +11,7 @@ import com.inklusport.sports.repository.EventAttendanceRepository;
 import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
 import com.inklusport.sports.repository.SportRepository;
+import com.inklusport.sports.util.EventImageDefaults;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,10 @@ public class EventService {
         quizEligibilityService.assertOrganizerQuizPassed(request.getCreatedBy());
         Sport sport = sportRepository.findById(request.getSportId())
                 .orElseThrow(() -> new RuntimeException("Deporte no encontrado"));
+        String imageUrl = request.getImageUrl();
+        if (imageUrl == null || imageUrl.isBlank()) {
+            imageUrl = EventImageDefaults.forSport(sport.getName());
+        }
         Event event = Event.builder()
                 .sportId(sport.getId())
                 .name(request.getName())
@@ -65,6 +70,9 @@ public class EventService {
                 .eventDate(request.getEventDate())
                 .eventTime(request.getEventTime())
                 .location(request.getLocation())
+                .imageUrl(imageUrl.trim())
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
                 .maxCapacity(request.getMaxCapacity())
                 .availableCapacity(request.getMaxCapacity())
                 .createdBy(request.getCreatedBy())
@@ -90,9 +98,14 @@ public class EventService {
         String oldLocation = event.getLocation();
 
         if (request.getSportId() != null) {
-            sportRepository.findById(request.getSportId())
+            Sport newSport = sportRepository.findById(request.getSportId())
                     .orElseThrow(() -> new RuntimeException("Deporte no encontrado"));
             event.setSportId(request.getSportId());
+            // Si la portada es la predeterminada, actualízala al cambiar de deporte.
+            if (event.getImageUrl() == null || event.getImageUrl().isBlank()
+                    || event.getImageUrl().startsWith("assets/events/")) {
+                event.setImageUrl(EventImageDefaults.forSport(newSport.getName()));
+            }
         }
         if (request.getName() != null && !request.getName().isBlank()) {
             event.setName(request.getName().trim());
@@ -108,6 +121,20 @@ public class EventService {
         }
         if (request.getLocation() != null) {
             event.setLocation(request.getLocation().isBlank() ? null : request.getLocation().trim());
+        }
+        if (request.getLatitude() != null) {
+            event.setLatitude(request.getLatitude());
+        }
+        if (request.getLongitude() != null) {
+            event.setLongitude(request.getLongitude());
+        }
+        // Si borran la dirección, limpian coordenadas.
+        if (request.getLocation() != null && request.getLocation().isBlank()) {
+            event.setLatitude(null);
+            event.setLongitude(null);
+        }
+        if (request.getImageUrl() != null) {
+            event.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl().trim());
         }
         if (request.getMaxCapacity() != null) {
             int occupied = event.getMaxCapacity() - (event.getAvailableCapacity() != null
@@ -324,15 +351,23 @@ public class EventService {
 
     private EventResponse convertToResponse(Event event) {
         Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
+        String sportName = sport != null ? sport.getName() : "N/A";
+        String imageUrl = event.getImageUrl();
+        if (imageUrl == null || imageUrl.isBlank()) {
+            imageUrl = EventImageDefaults.forSport(sportName);
+        }
         return EventResponse.builder()
                 .id(event.getId())
                 .sportId(event.getSportId())
-                .sportName(sport != null ? sport.getName() : "N/A")
+                .sportName(sportName)
                 .name(event.getName())
                 .description(event.getDescription())
                 .eventDate(event.getEventDate())
                 .eventTime(event.getEventTime())
                 .location(event.getLocation())
+                .imageUrl(imageUrl)
+                .latitude(event.getLatitude())
+                .longitude(event.getLongitude())
                 .maxCapacity(event.getMaxCapacity())
                 .availableCapacity(event.getAvailableCapacity())
                 .status(event.getStatus() != null ? event.getStatus().name() : null)

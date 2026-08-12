@@ -1,7 +1,5 @@
 package com.inklusport.sports.service;
 
-import com.inklusport.sports.client.NotificationServiceClient;
-import com.inklusport.sports.dto.NotificationRequest;
 import com.inklusport.sports.entity.EventRegistration;
 import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
@@ -13,7 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -27,9 +25,6 @@ class RegistrationServiceTest {
 
     @Mock
     private EventRepository eventRepository;
-
-    @Mock
-    private NotificationServiceClient notificationClient;
 
     @Mock
     private StaffNotificationService staffNotificationService;
@@ -67,6 +62,12 @@ class RegistrationServiceTest {
 
         registrationService.cancelRegistration("reg-confirmed");
 
-        verify(notificationClient, times(1)).createNotification(eq("waitlist-user-1"), any(NotificationRequest.class));
+        verify(staffNotificationService, times(1)).notifyUser(
+                eq("waitlist-user-1"),
+                eq("waitlist_promoted"),
+                anyString(),
+                anyString(),
+                eq("event-1")
+        );
     }
 }

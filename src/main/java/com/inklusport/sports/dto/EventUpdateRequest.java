@@ -19,6 +19,9 @@ public class EventUpdateRequest {
     private LocalDate eventDate;
     private LocalTime eventTime;
     private String location;
+    private String imageUrl;
+    private Double latitude;
+    private Double longitude;
 
     @Positive(message = "El cupo máximo debe ser mayor a 0")
     private Integer maxCapacity;

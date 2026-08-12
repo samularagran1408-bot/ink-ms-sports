@@ -1,9 +1,7 @@
 package com.inklusport.sports.service;
 
-import com.inklusport.sports.client.NotificationServiceClient;
 import com.inklusport.sports.dto.RegistrationRequest;
 import com.inklusport.sports.dto.RegistrationResponse;
-import com.inklusport.sports.dto.NotificationRequest;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
 import com.inklusport.sports.repository.EventRegistrationRepository;
@@ -29,7 +27,6 @@ public class RegistrationService {
 
     private final EventRegistrationRepository registrationRepository;
     private final EventRepository eventRepository;
-    private final NotificationServiceClient notificationClient;
     private final StaffNotificationService staffNotificationService;
     private final UserIdentityService userIdentityService;
 
@@ -204,21 +201,7 @@ public class RegistrationService {
 
     private void sendNotification(String userId, String type, String title, String body, String eventId) {
         log.info("Enviando notificación - Usuario: {}, Título: {}", userId, title);
-
-        try {
-            NotificationRequest notificationRequest = new NotificationRequest();
-            notificationRequest.setUserId(userId);
-            notificationRequest.setType(type);
-            notificationRequest.setTitle(title);
-            notificationRequest.setBody(body);
-            notificationRequest.setEventId(eventId);
-            notificationRequest.setPriority("high");
-
-            notificationClient.createNotification(userId, notificationRequest);
-            log.info("Notificación enviada correctamente");
-        } catch (Exception e) {
-            log.error("Error al enviar notificación a usuario {}: {}", userId, e.getMessage());
-        }
+        staffNotificationService.notifyUser(userId, type, title, body, eventId);
     }
 
     @Transactional
