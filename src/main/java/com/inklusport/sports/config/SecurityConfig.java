@@ -56,6 +56,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/routines/*").permitAll()
                         .requestMatchers("/api/routine-registrations/user/**").permitAll()
                         .requestMatchers("/api/routine-registrations/**").authenticated()
+                        .requestMatchers("/api/internal/**").permitAll()
                         .requestMatchers("/api/registrations/user/**").permitAll()
                         .requestMatchers("/api/registrations/**").authenticated()
                         .requestMatchers("/api/waitlist/**").authenticated()

@@ -1,9 +1,12 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.client.UserServiceClient;
+import com.inklusport.sports.dto.FutureRegistrationsCheckResponse;
 import com.inklusport.sports.dto.RegistrationRequest;
 import com.inklusport.sports.dto.RegistrationResponse;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
+import com.inklusport.sports.enums.EventStatus;
 import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
@@ -11,8 +14,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +35,7 @@ public class RegistrationService {
     private final EventRepository eventRepository;
     private final StaffNotificationService staffNotificationService;
     private final UserIdentityService userIdentityService;
+    private final UserServiceClient userServiceClient;
 
     @Transactional
     public RegistrationResponse registerToEvent(RegistrationRequest request) {
@@ -117,7 +124,7 @@ public class RegistrationService {
             );
         }
 
-        return convertToResponse(saved, statusMessage, event.getName());
+        return convertToResponse(saved, statusMessage, event, null, null);
     }
 
     @Transactional
@@ -265,11 +272,15 @@ public class RegistrationService {
     }
 
     public List<RegistrationResponse> getWaitlistForEvent(String eventId) {
+        Event event = eventRepository.findById(eventId).orElse(null);
         List<EventRegistration> waitlist = registrationRepository
                 .findByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
 
         return waitlist.stream()
-                .map(reg -> convertToResponse(reg, "WAITLIST", "Nombre del Evento"))
+                .map(reg -> {
+                    UserNames names = resolveUserNames(reg.getUserId());
+                    return convertToResponse(reg, "WAITLIST", event, names.fullName, names.email);
+                })
                 .toList();
     }
 
@@ -285,21 +296,70 @@ public class RegistrationService {
 
         List<RegistrationResponse> responses = new ArrayList<>();
         for (EventRegistration reg : unique.values()) {
-            String eventName = eventRepository.findById(reg.getEventId())
-                    .map(Event::getName)
-                    .orElse("Evento");
+            Event event = eventRepository.findById(reg.getEventId()).orElse(null);
             String status = reg.getWaitlistPosition() != null ? "WAITLIST" : "CONFIRMED";
-            responses.add(convertToResponse(reg, status, eventName));
+            responses.add(convertToResponse(reg, status, event, null, null));
         }
+        responses.sort(Comparator
+                .comparing((RegistrationResponse r) -> r.getEventDate() == null ? LocalDate.MIN : r.getEventDate())
+                .thenComparing(r -> r.getEventTime() == null ? LocalTime.MIN : r.getEventTime())
+                .reversed());
         return responses;
     }
 
-    private RegistrationResponse convertToResponse(EventRegistration reg, String statusMessage, String eventName) {
+    @Transactional(readOnly = true)
+    public FutureRegistrationsCheckResponse checkFutureRegistrations(String userId) {
+        Set<String> aliases = userIdentityService.identityAliases(userId);
+        aliases.add(userId);
+
+        Map<String, EventRegistration> unique = new LinkedHashMap<>();
+        for (String alias : aliases) {
+            if (alias == null || alias.isBlank()) {
+                continue;
+            }
+            for (EventRegistration reg : registrationRepository.findByUserId(alias)) {
+                unique.putIfAbsent(reg.getId(), reg);
+            }
+        }
+
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+        List<String> eventNames = new ArrayList<>();
+        for (EventRegistration reg : unique.values()) {
+            Event event = eventRepository.findById(reg.getEventId()).orElse(null);
+            if (event == null || event.getEventDate() == null) {
+                continue;
+            }
+            if (event.getStatus() == EventStatus.finished || event.getStatus() == EventStatus.cancelled) {
+                continue;
+            }
+            boolean future = event.getEventDate().isAfter(today)
+                    || (event.getEventDate().isEqual(today)
+                    && (event.getEventTime() == null || !event.getEventTime().isBefore(now)));
+            if (future) {
+                eventNames.add(event.getName());
+            }
+        }
+
+        return FutureRegistrationsCheckResponse.builder()
+                .hasFutureRegistrations(!eventNames.isEmpty())
+                .count(eventNames.size())
+                .eventNames(eventNames)
+                .build();
+    }
+
+    private RegistrationResponse convertToResponse(EventRegistration reg, String statusMessage, Event event,
+                                                   String userFullName, String userEmail) {
         return RegistrationResponse.builder()
                 .id(reg.getId())
                 .userId(reg.getUserId())
+                .userFullName(userFullName)
+                .userEmail(userEmail)
                 .eventId(reg.getEventId())
-                .eventName(eventName)
+                .eventName(event != null ? event.getName() : "Evento")
+                .eventDate(event != null ? event.getEventDate() : null)
+                .eventTime(event != null ? event.getEventTime() : null)
+                .eventStatus(event != null && event.getStatus() != null ? event.getStatus().name() : null)
                 .qrCode(reg.getQrCode())
                 .registrationDate(reg.getRegistrationDate())
                 .attended(reg.getAttended())
@@ -307,4 +367,35 @@ public class RegistrationService {
                 .message(statusMessage)
                 .build();
     }
+
+    private UserNames resolveUserNames(String userId) {
+        if (userId == null) {
+            return new UserNames(null, null);
+        }
+        try {
+            Map<String, Object> user = userServiceClient.getUserByIdInternal(userId);
+            return new UserNames(
+                    stringField(user, "fullName", "full_name", "name"),
+                    stringField(user, "email")
+            );
+        } catch (Exception e) {
+            log.debug("No se pudo enriquecer usuario {} de waitlist: {}", userId, e.getMessage());
+            return new UserNames(null, null);
+        }
+    }
+
+    private String stringField(Map<String, Object> source, String... keys) {
+        if (source == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !value.toString().isBlank()) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
+    private record UserNames(String fullName, String email) {}
 }

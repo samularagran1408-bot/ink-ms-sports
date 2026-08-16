@@ -3,6 +3,7 @@ package com.inklusport.sports.service;
 import com.inklusport.sports.client.UserServiceClient;
 import com.inklusport.sports.dto.AttendanceReportResponse;
 import com.inklusport.sports.dto.AttendanceRequest;
+import com.inklusport.sports.dto.BulkAttendanceRequest;
 import com.inklusport.sports.dto.QrAttendanceInfoResponse;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventAttendance;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap; /** Permite ejecutar CRUDS de forma rápida */
 import java.util.List;
 import java.util.Map;
 
@@ -150,6 +152,41 @@ public class EventAttendanceService {
         }
 
         return "Asistencia confirmada exitosamente. Código de registro: " + saved.getId();
+    }
+
+    /**
+     * Check-in masivo: una sola validación de quiz y un resultado parcial por inscripción.
+     */
+    public Map<String, Object> recordBulkAttendance(BulkAttendanceRequest request) {
+        quizEligibilityService.assertCurrentStaffQuizPassed();
+
+        List<String> ids = request.getRegistrationIds() == null ? List.of() : request.getRegistrationIds();
+        String method = request.getCheckInMethod() == null ? CheckInMethod.admin.name() : request.getCheckInMethod();
+        String verifiedBy = request.getVerifiedBy();
+
+        int succeeded = 0;
+        int failed = 0;
+        List<String> errors = new ArrayList<>();
+        for (String registrationId : ids) {
+            if (registrationId == null || registrationId.isBlank()) {
+                continue;
+            }
+            try {
+                recordAttendanceInternal(registrationId.trim(), method, verifiedBy);
+                succeeded++;
+            } catch (Exception e) {
+                failed++;
+                errors.add(registrationId + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", failed == 0 ? "SUCCESS" : "PARTIAL");
+        result.put("message", "Asistencias registradas: " + succeeded + ". Fallidas: " + failed + ".");
+        result.put("succeeded", succeeded);
+        result.put("failed", failed);
+        result.put("errors", errors);
+        return result;
     }
 
     @Transactional(readOnly = true)

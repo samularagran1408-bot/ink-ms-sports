@@ -1,6 +1,7 @@
 package com.inklusport.sports.controller;
 
 import com.inklusport.sports.dto.AttendanceRequest;
+import com.inklusport.sports.dto.BulkAttendanceRequest;
 import com.inklusport.sports.dto.QrAttendanceRequest;
 import com.inklusport.sports.service.EventAttendanceService;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,27 @@ public class EventAttendanceController {
             return ResponseEntity.internalServerError().body(Map.of(
                     "status", "FATAL_ERROR",
                     "message", "Ocurrió un error inesperado al procesar la asistencia."
+            ));
+        }
+    }
+
+    /**
+     * Check-in masivo de varias inscripciones (admin/organizador).
+     */
+    @PostMapping("/bulk")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> markBulkAttendance(@RequestBody BulkAttendanceRequest request) {
+        try {
+            return ResponseEntity.ok(eventAttendanceService.recordBulkAttendance(request));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "ERROR",
+                    "message", e.getMessage()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "status", "FATAL_ERROR",
+                    "message", "Ocurrió un error inesperado al procesar la asistencia masiva."
             ));
         }
     }
