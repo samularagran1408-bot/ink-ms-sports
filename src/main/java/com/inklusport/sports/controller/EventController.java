@@ -1,5 +1,6 @@
 package com.inklusport.sports.controller;
 
+import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventResponse;
 import com.inklusport.sports.dto.EventUpdateRequest;
@@ -8,10 +9,12 @@ import com.inklusport.sports.repository.EventRepository;
 import com.inklusport.sports.enums.EventStatus;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -27,7 +30,7 @@ public class EventController {
     private final EventRepository eventRepository;
 
     /**
-     * Lista los eventos disponibles.
+     * Lista los eventos (gestión completa).
      */
     @GetMapping
     @PreAuthorize("permitAll()")
@@ -36,23 +39,23 @@ public class EventController {
     }
 
     /**
-     * Crea un evento nuevo.
+     * Lista eventos activos disponibles para inscripción.
      */
-    @PostMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('ORGANIZADOR') or hasRole('COACH') or hasRole('ENTRENADOR')")
-    public ResponseEntity<EventResponse> createEvent(@RequestBody EventRequest request) {
-        return ResponseEntity.ok(eventService.createEvent(request));
+    @GetMapping("/available")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<List<EventResponse>> getAvailableEvents() {
+        return ResponseEntity.ok(eventService.getAvailableEvents());
     }
 
     /**
-     * Actualiza un evento (fecha, lugar, etc.). Notifica a inscritos si cambian fecha/lugar.
+     * Calendario de eventos activos. Si from/to no traen coincidencias, lista vacía.
      */
-    @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('ORGANIZADOR') or hasRole('COACH') or hasRole('ENTRENADOR')")
-    public ResponseEntity<EventResponse> updateEvent(
-            @PathVariable String id,
-            @Valid @RequestBody EventUpdateRequest request) {
-        return ResponseEntity.ok(eventService.updateEvent(id, request));
+    @GetMapping("/calendar")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<List<CalendarEventResponse>> getCalendar(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(eventService.getCalendar(from, to));
     }
 
     @GetMapping("/active/count")
@@ -65,5 +68,43 @@ public class EventController {
     public ResponseEntity<Long> countActiveEventsBySport(@PathVariable Long sportId) {
         long count = eventRepository.countBySportIdAndStatus(sportId, EventStatus.active);
         return ResponseEntity.ok(count);
+    }
+
+    /**
+     * Consulta un evento por id. 404 si no existe.
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<EventResponse> getEventById(@PathVariable String id) {
+        return ResponseEntity.ok(eventService.getEventById(id));
+    }
+
+    /**
+     * Crea un evento nuevo.
+     */
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('ORGANIZADOR') or hasRole('COACH') or hasRole('ENTRENADOR')")
+    public ResponseEntity<EventResponse> createEvent(@Valid @RequestBody EventRequest request) {
+        return ResponseEntity.ok(eventService.createEvent(request));
+    }
+
+    /**
+     * Actualiza un evento (fecha, lugar, cupo, etc.). Notifica a inscritos si cambian fecha/lugar.
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('ORGANIZADOR') or hasRole('COACH') or hasRole('ENTRENADOR')")
+    public ResponseEntity<EventResponse> updateEvent(
+            @PathVariable String id,
+            @Valid @RequestBody EventUpdateRequest request) {
+        return ResponseEntity.ok(eventService.updateEvent(id, request));
+    }
+
+    /**
+     * Cancela un evento activo o en borrador. Falla si ya está cancelado.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZER') or hasRole('ORGANIZADOR') or hasRole('COACH') or hasRole('ENTRENADOR')")
+    public ResponseEntity<EventResponse> cancelEvent(@PathVariable String id) {
+        return ResponseEntity.ok(eventService.cancelEvent(id));
     }
 }

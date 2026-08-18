@@ -1,5 +1,6 @@
 package com.inklusport.sports.dto;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
@@ -24,5 +25,6 @@ public class EventUpdateRequest {
     private Double longitude;
 
     @Positive(message = "El cupo máximo debe ser mayor a 0")
+    @Max(value = 500, message = "El cupo del evento está excedido. El máximo permitido es 500.")
     private Integer maxCapacity;
 }

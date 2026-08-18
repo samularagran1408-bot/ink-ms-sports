@@ -3,6 +3,7 @@ package com.inklusport.sports.controller;
 import com.inklusport.sports.dto.DisabilityRequest;
 import com.inklusport.sports.dto.DisabilityResponse;
 import com.inklusport.sports.service.DisabilityService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +23,7 @@ public class DisabilityController {
     private final DisabilityService disabilityService;
 
     /**
-     * Lista todas las discapacidades.
+     * Lista todas las discapacidades (activas e inactivas).
      */
     @GetMapping
     @PreAuthorize("permitAll()")
@@ -53,7 +54,7 @@ public class DisabilityController {
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('COACH')")
-    public ResponseEntity<DisabilityResponse> createDisability(@RequestBody DisabilityRequest request) {
+    public ResponseEntity<DisabilityResponse> createDisability(@Valid @RequestBody DisabilityRequest request) {
         return ResponseEntity.ok(disabilityService.createDisability(request));
     }
 
@@ -62,8 +63,28 @@ public class DisabilityController {
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('COACH')")
-    public ResponseEntity<DisabilityResponse> updateDisability(@PathVariable Integer id, @RequestBody DisabilityRequest request) {
+    public ResponseEntity<DisabilityResponse> updateDisability(
+            @PathVariable Integer id,
+            @Valid @RequestBody DisabilityRequest request) {
         return ResponseEntity.ok(disabilityService.updateDisability(id, request));
+    }
+
+    /**
+     * Desactiva una discapacidad (soft-delete). Falla si ya está desactivada.
+     */
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('COACH')")
+    public ResponseEntity<DisabilityResponse> deactivateDisability(@PathVariable Integer id) {
+        return ResponseEntity.ok(disabilityService.deactivateDisability(id));
+    }
+
+    /**
+     * Reactiva una discapacidad previamente desactivada.
+     */
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('COACH')")
+    public ResponseEntity<DisabilityResponse> activateDisability(@PathVariable Integer id) {
+        return ResponseEntity.ok(disabilityService.activateDisability(id));
     }
 
     /**

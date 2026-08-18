@@ -1,6 +1,7 @@
 package com.inklusport.sports.dto;
 
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -38,6 +39,7 @@ public class EventRequest {
 
     @NotNull(message = "El cupo máximo es obligatorio")
     @Positive(message = "El cupo máximo debe ser mayor a 0")
+    @Max(value = 500, message = "El cupo del evento está excedido. El máximo permitido es 500.")
     private Integer maxCapacity;
 
     private String createdBy;

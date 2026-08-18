@@ -42,6 +42,13 @@ public class RegistrationService {
         Event event = eventRepository.findById(request.getEventId())
             .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
 
+        if (event.getStatus() == EventStatus.cancelled) {
+            throw new IllegalStateException("No es posible inscribirse a un evento cancelado.");
+        }
+        if (event.getStatus() == EventStatus.finished) {
+            throw new IllegalStateException("No es posible inscribirse a un evento finalizado.");
+        }
+
         String userId = userIdentityService.resolveCanonicalUserId(request.getUserId());
         Set<String> aliases = userIdentityService.identityAliases(userId);
         aliases.add(userId);

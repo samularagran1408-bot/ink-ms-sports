@@ -2,12 +2,14 @@ package com.inklusport.sports.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Actúa como un interceptor/ try-catch global para toda la app
@@ -24,11 +26,33 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Captura argumentos inválidos (Ej: "Evento no encontrado")
+     * Captura argumentos inválidos (Ej: cupo menor o igual a cero)
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, "ERROR", ex.getMessage());
+    }
+
+    /**
+     * Recurso inexistente (discapacidad, evento o deporte no encontrado).
+     */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage());
+    }
+
+    /**
+     * Validación Bean Validation (@Valid) para crear/editar con datos inválidos.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        if (message.isBlank()) {
+            message = "Los datos enviados no son válidos.";
+        }
+        return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message);
     }
 
     /**

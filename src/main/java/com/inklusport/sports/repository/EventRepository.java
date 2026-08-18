@@ -16,7 +16,18 @@ public interface EventRepository extends JpaRepository<Event, String> {
 
     List<Event> findByStatus(EventStatus status);
 
+    List<Event> findByStatusOrderByEventDateAscEventTimeAsc(EventStatus status);
+
     List<Event> findByEventDateAndStatus(LocalDate eventDate, EventStatus status);
+
+    @Query("SELECT e FROM Event e WHERE e.status = :status " +
+           "AND (:fromDate IS NULL OR e.eventDate >= :fromDate) " +
+           "AND (:toDate IS NULL OR e.eventDate <= :toDate) " +
+           "ORDER BY e.eventDate ASC, e.eventTime ASC")
+    List<Event> findCalendarEvents(
+            @Param("status") EventStatus status,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
 
     long countByStatus(EventStatus status);
 

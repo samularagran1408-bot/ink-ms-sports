@@ -5,6 +5,7 @@ import com.inklusport.sports.dto.SportDisabilityResponse;
 import com.inklusport.sports.entity.Disability;
 import com.inklusport.sports.entity.Sport;
 import com.inklusport.sports.entity.SportDisability;
+import com.inklusport.sports.exception.ResourceNotFoundException;
 import com.inklusport.sports.repository.DisabilityRepository;
 import com.inklusport.sports.repository.SportDisabilityRepository;
 import com.inklusport.sports.repository.SportRepository;
@@ -24,6 +25,9 @@ public class SportDisabilityService {
 
     @Transactional(readOnly = true)
     public List<SportDisabilityResponse> getSportDisabilities(Integer sportId) {
+        if (!sportRepository.existsById(sportId)) {
+            throw new ResourceNotFoundException("Deporte no encontrado con ID: " + sportId);
+        }
         return sportDisabilityRepository.findBySportId(sportId).stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
@@ -38,9 +42,9 @@ public class SportDisabilityService {
         Integer dId = request.getDisabilityId() instanceof Long ? ((Long) (Object) request.getDisabilityId()).intValue() : (Integer) (Object) request.getDisabilityId();
 
         Sport sport = sportRepository.findById(sId)
-                .orElseThrow(() -> new RuntimeException("Deporte no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
         Disability dis = disabilityRepository.findById(dId)
-                .orElseThrow(() -> new RuntimeException("Discapacidad no encontrada"));
+                .orElseThrow(() -> new ResourceNotFoundException("Discapacidad no encontrada"));
         
         SportDisability.SportDisabilityId id = new SportDisability.SportDisabilityId(sId, dId);
         SportDisability sd = SportDisability.builder()

@@ -3,6 +3,7 @@ package com.inklusport.sports.service;
 import com.inklusport.sports.dto.DisabilityRequest;
 import com.inklusport.sports.dto.DisabilityResponse;
 import com.inklusport.sports.entity.Disability;
+import com.inklusport.sports.exception.ResourceNotFoundException;
 import com.inklusport.sports.repository.DisabilityRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,38 +29,78 @@ public class DisabilityService {
 
     @Transactional(readOnly = true)
     public DisabilityResponse getDisabilityById(Integer id) {
-        Disability d = disabilityRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Discapacidad no encontrada con ID: " + id));
-        return convertToResponse(d);
+        return convertToResponse(requireDisability(id));
     }
 
     @Transactional
     public DisabilityResponse createDisability(DisabilityRequest request) {
-        if (disabilityRepository.existsByName(request.getName())) {
-            throw new RuntimeException("Ya existe esta discapacidad");
+        String name = normalizeName(request.getName());
+        if (disabilityRepository.existsByNameIgnoreCase(name)) {
+            throw new IllegalStateException("Ya existe una discapacidad con el nombre: " + name);
         }
         Disability d = Disability.builder()
-                .name(request.getName()).description(request.getDescription())
-                .category(request.getCategory()).isActive(request.getIsActive() != null ? request.getIsActive() : true)
+                .name(name)
+                .description(request.getDescription())
+                .category(request.getCategory())
+                .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .build();
         return convertToResponse(disabilityRepository.save(d));
     }
 
     @Transactional
     public DisabilityResponse updateDisability(Integer id, DisabilityRequest request) {
-        Disability d = disabilityRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Discapacidad no encontrada"));
-        d.setName(request.getName());
+        Disability d = requireDisability(id);
+        String name = normalizeName(request.getName());
+        if (disabilityRepository.existsByNameIgnoreCaseAndIdNot(name, id)) {
+            throw new IllegalStateException("Ya existe una discapacidad con el nombre: " + name);
+        }
+        d.setName(name);
         d.setDescription(request.getDescription());
         d.setCategory(request.getCategory());
-        d.setIsActive(request.getIsActive());
+        if (request.getIsActive() != null) {
+            d.setIsActive(request.getIsActive());
+        }
+        return convertToResponse(disabilityRepository.save(d));
+    }
+
+    @Transactional
+    public DisabilityResponse deactivateDisability(Integer id) {
+        Disability d = requireDisability(id);
+        if (Boolean.FALSE.equals(d.getIsActive())) {
+            throw new IllegalStateException("La discapacidad ya está desactivada.");
+        }
+        d.setIsActive(false);
+        return convertToResponse(disabilityRepository.save(d));
+    }
+
+    @Transactional
+    public DisabilityResponse activateDisability(Integer id) {
+        Disability d = requireDisability(id);
+        if (Boolean.TRUE.equals(d.getIsActive())) {
+            throw new IllegalStateException("La discapacidad ya está activa.");
+        }
+        d.setIsActive(true);
         return convertToResponse(disabilityRepository.save(d));
     }
 
     @Transactional
     public void deleteDisability(Integer id) {
-        if (!disabilityRepository.existsById(id)) throw new RuntimeException("No existe");
+        if (!disabilityRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Discapacidad no encontrada con ID: " + id);
+        }
         disabilityRepository.deleteById(id);
+    }
+
+    private Disability requireDisability(Integer id) {
+        return disabilityRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Discapacidad no encontrada con ID: " + id));
+    }
+
+    private String normalizeName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("El nombre de la discapacidad es obligatorio.");
+        }
+        return name.trim();
     }
 
     private DisabilityResponse convertToResponse(Disability d) {

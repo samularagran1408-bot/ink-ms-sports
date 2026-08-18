@@ -1,5 +1,6 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventResponse;
 import com.inklusport.sports.dto.EventUpdateRequest;
@@ -7,6 +8,7 @@ import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
 import com.inklusport.sports.entity.Sport;
 import com.inklusport.sports.enums.EventStatus;
+import com.inklusport.sports.exception.ResourceNotFoundException;
 import com.inklusport.sports.repository.EventAttendanceRepository;
 import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
@@ -35,6 +37,7 @@ public class EventService {
     private static final ZoneId ZONA = ZoneId.of("America/Bogota");
     private static final int HORAS_DESPUES = 2;
     private static final int HORAS_RETENCION = 24;
+    static final int MAX_EVENT_CAPACITY = 500;
     private static final DateTimeFormatter FECHA_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter HORA_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -51,14 +54,71 @@ public class EventService {
         return eventRepository.findAll().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public EventResponse getEventById(String eventId) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado con ID: " + eventId));
+        return convertToResponse(event);
+    }
+
+    /**
+     * Eventos activos y vigentes que un usuario puede consultar/inscribirse.
+     */
+    @Transactional
+    public List<EventResponse> getAvailableEvents() {
+        procesarEstadosEventos();
+        LocalDate today = LocalDate.now(ZONA);
+        return eventRepository.findByStatusOrderByEventDateAscEventTimeAsc(EventStatus.active).stream()
+                .filter(event -> event.getEventDate() != null && !event.getEventDate().isBefore(today))
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Calendario de eventos activos, opcionalmente filtrado por rango de fechas.
+     */
+    @Transactional
+    public List<CalendarEventResponse> getCalendar(LocalDate fromDate, LocalDate toDate) {
+        procesarEstadosEventos();
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
+        }
+        return eventRepository.findCalendarEvents(EventStatus.active, fromDate, toDate).stream()
+                .map(this::convertToCalendarResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Cancela un evento activo o en borrador. Falla si ya está cancelado o finalizado.
+     */
+    @Transactional
+    public EventResponse cancelEvent(String eventId) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado con ID: " + eventId));
+        quizEligibilityService.assertOrganizerQuizPassed(event.getCreatedBy());
+
+        if (event.getStatus() == EventStatus.cancelled) {
+            throw new IllegalStateException("El evento ya está cancelado.");
+        }
+        if (event.getStatus() == EventStatus.finished) {
+            throw new IllegalStateException("No se puede cancelar un evento finalizado.");
+        }
+
+        event.setStatus(EventStatus.cancelled);
+        Event saved = eventRepository.saveAndFlush(event);
+        notifyRegistrantsAboutCancellation(saved);
+        return convertToResponse(saved);
+    }
+
     /**
      * Crea un evento en borrador; exige quiz de organizador aprobado (salvo admin).
      */
     @Transactional
     public EventResponse createEvent(EventRequest request) {
         quizEligibilityService.assertOrganizerQuizPassed(request.getCreatedBy());
+        validateCapacity(request.getMaxCapacity());
         Sport sport = sportRepository.findById(request.getSportId())
-                .orElseThrow(() -> new RuntimeException("Deporte no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
         String imageUrl = request.getImageUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
             imageUrl = EventImageDefaults.forSport(sport.getName());
@@ -90,7 +150,7 @@ public class EventService {
     @Transactional
     public EventResponse updateEvent(String eventId, EventUpdateRequest request) {
         Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado"));
         quizEligibilityService.assertOrganizerQuizPassed(event.getCreatedBy());
 
         LocalDate oldDate = event.getEventDate();
@@ -99,7 +159,7 @@ public class EventService {
 
         if (request.getSportId() != null) {
             Sport newSport = sportRepository.findById(request.getSportId())
-                    .orElseThrow(() -> new RuntimeException("Deporte no encontrado"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
             event.setSportId(request.getSportId());
             // Si la portada es la predeterminada, actualízala al cambiar de deporte.
             if (event.getImageUrl() == null || event.getImageUrl().isBlank()
@@ -137,6 +197,7 @@ public class EventService {
             event.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl().trim());
         }
         if (request.getMaxCapacity() != null) {
+            validateCapacity(request.getMaxCapacity());
             int occupied = event.getMaxCapacity() - (event.getAvailableCapacity() != null
                     ? event.getAvailableCapacity() : event.getMaxCapacity());
             if (request.getMaxCapacity() < occupied) {
@@ -207,6 +268,37 @@ public class EventService {
         );
 
         log.info("Notificados {} inscritos por cambio en evento {}", registrations.size(), event.getId());
+    }
+
+    private void notifyRegistrantsAboutCancellation(Event event) {
+        String title = "Evento cancelado";
+        String body = "El evento \"" + event.getName() + "\" fue cancelado.";
+        List<EventRegistration> registrations = eventRegistrationRepository.findByEventId(event.getId());
+        for (EventRegistration reg : registrations) {
+            staffNotificationService.notifyUser(
+                    reg.getUserId(),
+                    "event_cancelled",
+                    title,
+                    body,
+                    event.getId()
+            );
+        }
+        staffNotificationService.notifyAdmins(
+                "admin_event_cancelled",
+                title,
+                body + " Inscritos notificados: " + registrations.size() + ".",
+                event.getId()
+        );
+    }
+
+    private void validateCapacity(Integer maxCapacity) {
+        if (maxCapacity == null || maxCapacity <= 0) {
+            throw new IllegalArgumentException("El cupo máximo debe ser mayor a 0.");
+        }
+        if (maxCapacity > MAX_EVENT_CAPACITY) {
+            throw new IllegalStateException(
+                    "El cupo del evento está excedido. El máximo permitido es " + MAX_EVENT_CAPACITY + ".");
+        }
     }
 
     private String formatDateTime(LocalDate date, LocalTime time) {
@@ -373,6 +465,20 @@ public class EventService {
                 .status(event.getStatus() != null ? event.getStatus().name() : null)
                 .createdBy(event.getCreatedBy())
                 .createdAt(event.getCreatedAt())
+                .build();
+    }
+
+    private CalendarEventResponse convertToCalendarResponse(Event event) {
+        Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
+        return CalendarEventResponse.builder()
+                .id(event.getId())
+                .title(event.getName())
+                .startDate(event.getEventDate())
+                .startTime(event.getEventTime())
+                .location(event.getLocation())
+                .sportName(sport != null ? sport.getName() : "N/A")
+                .availableCapacity(event.getAvailableCapacity())
+                .maxCapacity(event.getMaxCapacity())
                 .build();
     }
 }
