@@ -28,6 +28,23 @@ public class SportDisabilityController {
     }
 
     /**
+     * Lista asociaciones con discapacidades activas.
+     */
+    @GetMapping
+    public ResponseEntity<List<SportDisabilityResponse>> getAllAssociations() {
+        return ResponseEntity.ok(sportDisabilityService.getAllAssociations());
+    }
+
+    /**
+     * Busca asociaciones (deporte, discapacidad o adaptaciones). Solo discapacidades activas.
+     */
+    @GetMapping("/search")
+    public ResponseEntity<List<SportDisabilityResponse>> searchAssociations(
+            @RequestParam(required = false) String q) {
+        return ResponseEntity.ok(sportDisabilityService.searchAssociations(q));
+    }
+
+    /**
      * Crea una adaptacion deporte-discapacidad.
      */
     @PostMapping

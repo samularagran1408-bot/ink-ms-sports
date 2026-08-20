@@ -38,6 +38,25 @@ public class SportService {
         return convertToResponse(sport);
     }
 
+    @Transactional(readOnly = true)
+    public List<SportResponse> searchSports(String query, boolean activeOnly) {
+        String q = query == null ? "" : query.trim();
+        List<Sport> found;
+        if (q.isEmpty()) {
+            found = activeOnly ? sportRepository.findByIsActiveTrue() : sportRepository.findAll();
+        } else if (q.chars().allMatch(Character::isDigit)) {
+            found = sportRepository.findById(Integer.valueOf(q))
+                    .filter(sport -> !activeOnly || Boolean.TRUE.equals(sport.getIsActive()))
+                    .map(List::of)
+                    .orElseGet(List::of);
+        } else {
+            found = activeOnly
+                    ? sportRepository.findByIsActiveTrueAndNameContainingIgnoreCase(q)
+                    : sportRepository.findByNameContainingIgnoreCase(q);
+        }
+        return found.stream().map(this::convertToResponse).collect(Collectors.toList());
+    }
+
     @Transactional
     public SportResponse createSport(SportRequest request) {
         if (sportRepository.existsByName(request.getName())) {
@@ -80,7 +99,9 @@ public class SportService {
 
     private SportResponse convertToResponse(Sport sport) {
         List<DisabilityResponse> disabilities = sportDisabilityRepository.findDisabilitiesBySportId(sport.getId())
-                .stream().map(d -> DisabilityResponse.builder()
+                .stream()
+                .filter(d -> !Boolean.FALSE.equals(d.getIsActive()))
+                .map(d -> DisabilityResponse.builder()
                         .id(d.getId()).name(d.getName()).description(d.getDescription())
                         .category(d.getCategory()).isActive(d.getIsActive()).build())
                 .collect(Collectors.toList());

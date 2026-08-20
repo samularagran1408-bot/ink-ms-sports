@@ -42,6 +42,17 @@ public class SportController {
     }
 
     /**
+     * Busca deportes por nombre o ID.
+     */
+    @GetMapping("/search")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<List<SportResponse>> searchSports(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "true") boolean activeOnly) {
+        return ResponseEntity.ok(sportService.searchSports(q, activeOnly));
+    }
+
+    /**
      * Obtiene el detalle de un deporte por id.
      */
     @GetMapping("/{id}")

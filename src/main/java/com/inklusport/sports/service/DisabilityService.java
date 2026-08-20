@@ -32,6 +32,30 @@ public class DisabilityService {
         return convertToResponse(requireDisability(id));
     }
 
+    /**
+     * Búsqueda pública: solo discapacidades activas. Por ID numérico o por nombre.
+     * Las desactivadas se tratan como no encontradas.
+     */
+    @Transactional(readOnly = true)
+    public List<DisabilityResponse> searchActiveDisabilities(String query) {
+        String q = query == null ? "" : query.trim();
+        if (q.isEmpty()) {
+            return getActiveDisabilities();
+        }
+        if (q.chars().allMatch(Character::isDigit)) {
+            Integer id = Integer.valueOf(q);
+            Disability disability = disabilityRepository.findByIdAndIsActiveTrue(id)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            disabilityRepository.existsById(id)
+                                    ? "No se puede buscar una discapacidad desactivada."
+                                    : "Discapacidad no encontrada con ID: " + id));
+            return List.of(convertToResponse(disability));
+        }
+        return disabilityRepository.findByIsActiveTrueAndNameContainingIgnoreCase(q).stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public DisabilityResponse createDisability(DisabilityRequest request) {
         String name = normalizeName(request.getName());

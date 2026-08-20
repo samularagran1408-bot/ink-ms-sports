@@ -41,6 +41,16 @@ public class DisabilityController {
     }
 
     /**
+     * Busca discapacidades activas por nombre o ID. Las desactivadas no aparecen.
+     */
+    @GetMapping("/search")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<List<DisabilityResponse>> searchDisabilities(
+            @RequestParam(required = false) String q) {
+        return ResponseEntity.ok(disabilityService.searchActiveDisabilities(q));
+    }
+
+    /**
      * Obtiene una discapacidad por id.
      */
     @GetMapping("/{id}")

@@ -33,6 +33,24 @@ public class SportDisabilityService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<SportDisabilityResponse> getAllAssociations() {
+        return sportDisabilityRepository.findAllWithActiveDisabilities().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SportDisabilityResponse> searchAssociations(String query) {
+        String q = query == null ? "" : query.trim();
+        if (q.isEmpty()) {
+            return getAllAssociations();
+        }
+        return sportDisabilityRepository.searchActive(q).stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public SportDisabilityResponse addAdaptation(SportDisabilityRequest request) {
         /**
@@ -45,6 +63,9 @@ public class SportDisabilityService {
                 .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
         Disability dis = disabilityRepository.findById(dId)
                 .orElseThrow(() -> new ResourceNotFoundException("Discapacidad no encontrada"));
+        if (Boolean.FALSE.equals(dis.getIsActive())) {
+            throw new IllegalStateException("No se puede asociar una discapacidad desactivada.");
+        }
         
         SportDisability.SportDisabilityId id = new SportDisability.SportDisabilityId(sId, dId);
         SportDisability sd = SportDisability.builder()

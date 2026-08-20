@@ -89,6 +89,21 @@ public class EventService {
     }
 
     /**
+     * Búsqueda de eventos por texto y rango de fechas. Sin coincidencias → lista vacía.
+     */
+    @Transactional
+    public List<EventResponse> searchEvents(String query, LocalDate fromDate, LocalDate toDate) {
+        procesarEstadosEventos();
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
+        }
+        String q = query == null ? "" : query.trim();
+        return eventRepository.searchEvents(q, EventStatus.active, fromDate, toDate).stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Cancela un evento activo o en borrador. Falla si ya está cancelado o finalizado.
      */
     @Transactional

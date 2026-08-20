@@ -58,6 +58,18 @@ public class EventController {
         return ResponseEntity.ok(eventService.getCalendar(from, to));
     }
 
+    /**
+     * Busca eventos activos por texto y rango de fechas.
+     */
+    @GetMapping("/search")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<List<EventResponse>> searchEvents(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(eventService.searchEvents(q, from, to));
+    }
+
     @GetMapping("/active/count")
     public ResponseEntity<Long> countActiveEvents() {
         long count = eventRepository.countByStatus(EventStatus.active);

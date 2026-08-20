@@ -29,6 +29,20 @@ public interface EventRepository extends JpaRepository<Event, String> {
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
 
+    @Query("SELECT e FROM Event e WHERE " +
+           "(:status IS NULL OR e.status = :status) " +
+           "AND (:fromDate IS NULL OR e.eventDate >= :fromDate) " +
+           "AND (:toDate IS NULL OR e.eventDate <= :toDate) " +
+           "AND (:q IS NULL OR :q = '' OR LOWER(e.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(COALESCE(e.location, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(COALESCE(e.description, '')) LIKE LOWER(CONCAT('%', :q, '%'))) " +
+           "ORDER BY e.eventDate ASC, e.eventTime ASC")
+    List<Event> searchEvents(
+            @Param("q") String q,
+            @Param("status") EventStatus status,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate);
+
     long countByStatus(EventStatus status);
 
     long countBySportIdAndStatus(Long sportId, EventStatus status);
