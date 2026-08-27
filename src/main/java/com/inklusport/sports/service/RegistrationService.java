@@ -110,11 +110,7 @@ public class RegistrationService {
 
         EventRegistration saved = registrationRepository.saveAndFlush(registration);
 
-        if (registration.getWaitlistPosition() != null && registration.getWaitlistPosition() == 1) {
-            notifyNewWaitlistFirstPosition(request.getEventId(), saved);
-        } else {
-            sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
-        }
+        sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
 
         notifyOrganizerAboutRegistration(event, notifyTarget, confirmed, registration.getWaitlistPosition());
 
@@ -139,10 +135,18 @@ public class RegistrationService {
         EventRegistration currentReg = registrationRepository.findById(registrationId)
                 .orElseThrow(() -> new IllegalArgumentException("Inscripción no encontrada"));
 
+        if (Boolean.TRUE.equals(currentReg.getAttended())) {
+            throw new IllegalStateException("No es posible cancelar una inscripción con asistencia registrada.");
+        }
+
         String eventId = currentReg.getEventId();
         Integer posicionEliminada = currentReg.getWaitlistPosition();
         String cancelledUser = currentReg.getUserId();
         Event event = eventRepository.findById(eventId).orElse(null);
+
+        if (event != null && event.getStatus() == EventStatus.finished) {
+            throw new IllegalStateException("No es posible cancelar la inscripción de un evento finalizado.");
+        }
 
         registrationRepository.delete(currentReg);
 
@@ -163,27 +167,23 @@ public class RegistrationService {
             if (nextInLine.isPresent()) {
                 EventRegistration promotedReg = nextInLine.get();
                 promotedReg.setWaitlistPosition(null);
+                if (promotedReg.getQrCode() == null || promotedReg.getQrCode().isBlank()) {
+                    promotedReg.setQrCode("QR_" + UUID.randomUUID());
+                }
                 registrationRepository.save(promotedReg);
 
                 log.info("Usuario {} promovido automáticamente al evento.", promotedReg.getUserId());
                 notifyPromotedWaitlistUser(eventId, promotedReg);
 
                 reorderWaitlist(eventId);
-                Optional<EventRegistration> newFirstAfterPromotion = registrationRepository
-                        .findFirstByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
-                newFirstAfterPromotion.ifPresent(next -> notifyNewWaitlistFirstPosition(eventId, next));
             } else {
-                Event ev = eventRepository.findById(eventId)
+                Event ev = event != null ? event : eventRepository.findById(eventId)
                         .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
-                ev.setAvailableCapacity(ev.getAvailableCapacity() + 1);
+                Integer available = ev.getAvailableCapacity() == null ? 0 : ev.getAvailableCapacity();
+                ev.setAvailableCapacity(available + 1);
                 eventRepository.saveAndFlush(ev);
             }
         } else {
-            if (posicionEliminada == 1) {
-                Optional<EventRegistration> nextFirst = registrationRepository
-                        .findFirstByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
-                nextFirst.ifPresent(next -> notifyNewWaitlistFirstPosition(eventId, next));
-            }
             reorderWaitlist(eventId);
         }
     }
@@ -240,13 +240,20 @@ public class RegistrationService {
     }
 
     @Transactional
-    public void notifyNewWaitlistFirstPosition(String eventId, EventRegistration newFirst) {
-        String notificationType = "waitlist_position_update";
-        String notificationTitle = "¡Avanzaste en la lista de espera!";
-        String notificationBody = "Has pasado a la posición 1 en la lista de espera del evento: "
-                + getEventName(eventId) + ". Si se libera un cupo, serás el siguiente en inscribirte.";
+    public void notifyWaitlistPositionUpdate(String eventId, EventRegistration registration) {
+        Integer position = registration.getWaitlistPosition();
+        if (position == null) {
+            return;
+        }
 
-        sendNotification(newFirst.getUserId(), notificationType, notificationTitle, notificationBody, eventId);
+        String eventName = getEventName(eventId);
+        String notificationTitle = "¡Avanzaste en la lista de espera!";
+        String notificationBody = position == 1
+                ? "Has pasado a la posición 1 en la lista de espera del evento: " + eventName
+                    + ". Si se libera un cupo, serás el siguiente en inscribirte."
+                : "Has subido a la posición " + position + " en la lista de espera del evento: " + eventName + ".";
+
+        sendNotification(registration.getUserId(), "waitlist_position_update", notificationTitle, notificationBody, eventId);
     }
 
     @Transactional
@@ -272,8 +279,15 @@ public class RegistrationService {
 
         int currentPosition = 1;
         for (EventRegistration reg : waitlist) {
-            reg.setWaitlistPosition(currentPosition);
-            registrationRepository.save(reg);
+            Integer previousPosition = reg.getWaitlistPosition();
+            boolean movedUp = previousPosition != null && previousPosition > currentPosition;
+            if (previousPosition == null || previousPosition != currentPosition) {
+                reg.setWaitlistPosition(currentPosition);
+                registrationRepository.save(reg);
+            }
+            if (movedUp) {
+                notifyWaitlistPositionUpdate(eventId, reg);
+            }
             currentPosition++;
         }
     }

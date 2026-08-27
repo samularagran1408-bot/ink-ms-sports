@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap; /** Permite ejecutar CRUDS de forma rápida */
 import java.util.List;
@@ -110,6 +111,8 @@ public class EventAttendanceService {
             );
         }
 
+        assertEventHasStarted(registration);
+
         if (eventAttendanceRepository.existsByRegistrationId(registrationId)) {
             throw new IllegalStateException(
                     "Error: Ya se registró la asistencia para esta inscripción previamente."
@@ -152,6 +155,26 @@ public class EventAttendanceService {
         }
 
         return "Asistencia confirmada exitosamente. Código de registro: " + saved.getId();
+    }
+
+    private void assertEventHasStarted(EventRegistration registration) {
+        if (registration.getEventId() == null || registration.getEventId().isBlank()) {
+            throw new IllegalArgumentException("Error: La inscripción no tiene evento asociado.");
+        }
+        Event event = eventRepository.findById(registration.getEventId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Error: El evento asociado a la inscripción no existe."
+                ));
+        if (event.getEventDate() == null || event.getEventTime() == null) {
+            return;
+        }
+        LocalDateTime start = LocalDateTime.of(event.getEventDate(), event.getEventTime());
+        if (LocalDateTime.now().isBefore(start)) {
+            throw new IllegalStateException(
+                    "Error: El registro de asistencia se habilita a partir de "
+                            + event.getEventDate() + " " + event.getEventTime() + "."
+            );
+        }
     }
 
     /**

@@ -57,7 +57,7 @@ public class EventService {
     @Transactional(readOnly = true)
     public EventResponse getEventById(String eventId) {
         Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado con ID: " + eventId));
+                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado"));
         return convertToResponse(event);
     }
 
@@ -109,7 +109,7 @@ public class EventService {
     @Transactional
     public EventResponse cancelEvent(String eventId) {
         Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado con ID: " + eventId));
+                .orElseThrow(() -> new ResourceNotFoundException("Evento no encontrado"));
         quizEligibilityService.assertOrganizerQuizPassed(event.getCreatedBy());
 
         if (event.getStatus() == EventStatus.cancelled) {
