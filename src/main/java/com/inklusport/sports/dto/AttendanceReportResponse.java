@@ -31,6 +31,7 @@ public class AttendanceReportResponse {
         private String userId;
         private String fullName;
         private String email;
+        private String profilePicture;
         private LocalDateTime checkInTime;
         private String checkInMethod;
         private String verifiedBy;
@@ -45,5 +46,6 @@ public class AttendanceReportResponse {
         private String userId;
         private String fullName;
         private String email;
+        private String profilePicture;
     }
 }

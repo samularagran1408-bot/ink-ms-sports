@@ -246,6 +246,7 @@ public class EventAttendanceService {
                     .userId(userId)
                     .fullName(names.fullName)
                     .email(names.email)
+                    .profilePicture(names.profilePicture)
                     .checkInTime(attendance.getCheckInTime())
                     .checkInMethod(attendance.getCheckInMethod() != null
                             ? attendance.getCheckInMethod().name()
@@ -265,6 +266,7 @@ public class EventAttendanceService {
                     .userId(registration.getUserId())
                     .fullName(names.fullName)
                     .email(names.email)
+                    .profilePicture(names.profilePicture)
                     .build());
         }
 
@@ -289,21 +291,22 @@ public class EventAttendanceService {
 
     private UserNames resolveUserNames(String userId) {
         if (userId == null) {
-            return new UserNames(null, null);
+            return new UserNames(null, null, null);
         }
         try {
             Map<String, Object> user = userServiceClient.getUserByIdInternal(userId);
             return new UserNames(
                     stringField(user, "fullName", "full_name", "name"),
-                    stringField(user, "email")
+                    stringField(user, "email"),
+                    stringField(user, "profilePicture", "profile_picture")
             );
         } catch (Exception e) {
             log.warn("No se pudo enriquecer usuario {} para el reporte: {}", userId, e.getMessage());
-            return new UserNames(null, null);
+            return new UserNames(null, null, null);
         }
     }
 
-    private record UserNames(String fullName, String email) {}
+    private record UserNames(String fullName, String email, String profilePicture) {}
 
     private String stringField(Map<String, Object> source, String... keys) {
         if (source == null) {

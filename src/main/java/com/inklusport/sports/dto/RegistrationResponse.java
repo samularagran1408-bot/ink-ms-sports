@@ -12,6 +12,7 @@ public class RegistrationResponse {
     private String userId;
     private String userFullName;
     private String userEmail;
+    private String userProfilePicture;
     private String eventId;
     private String eventName;
     private LocalDate eventDate;

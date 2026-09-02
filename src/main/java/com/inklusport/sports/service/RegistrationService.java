@@ -127,7 +127,7 @@ public class RegistrationService {
             );
         }
 
-        return convertToResponse(saved, statusMessage, event, null, null);
+        return convertToResponse(saved, statusMessage, event, null, null, null);
     }
 
     @Transactional
@@ -300,7 +300,7 @@ public class RegistrationService {
         return waitlist.stream()
                 .map(reg -> {
                     UserNames names = resolveUserNames(reg.getUserId());
-                    return convertToResponse(reg, "WAITLIST", event, names.fullName, names.email);
+                    return convertToResponse(reg, "WAITLIST", event, names.fullName, names.email, names.profilePicture);
                 })
                 .toList();
     }
@@ -319,7 +319,7 @@ public class RegistrationService {
         for (EventRegistration reg : unique.values()) {
             Event event = eventRepository.findById(reg.getEventId()).orElse(null);
             String status = reg.getWaitlistPosition() != null ? "WAITLIST" : "CONFIRMED";
-            responses.add(convertToResponse(reg, status, event, null, null));
+            responses.add(convertToResponse(reg, status, event, null, null, null));
         }
         responses.sort(Comparator
                 .comparing((RegistrationResponse r) -> r.getEventDate() == null ? LocalDate.MIN : r.getEventDate())
@@ -370,12 +370,13 @@ public class RegistrationService {
     }
 
     private RegistrationResponse convertToResponse(EventRegistration reg, String statusMessage, Event event,
-                                                   String userFullName, String userEmail) {
+                                                   String userFullName, String userEmail, String userProfilePicture) {
         return RegistrationResponse.builder()
                 .id(reg.getId())
                 .userId(reg.getUserId())
                 .userFullName(userFullName)
                 .userEmail(userEmail)
+                .userProfilePicture(userProfilePicture)
                 .eventId(reg.getEventId())
                 .eventName(event != null ? event.getName() : "Evento")
                 .eventDate(event != null ? event.getEventDate() : null)
@@ -391,17 +392,18 @@ public class RegistrationService {
 
     private UserNames resolveUserNames(String userId) {
         if (userId == null) {
-            return new UserNames(null, null);
+            return new UserNames(null, null, null);
         }
         try {
             Map<String, Object> user = userServiceClient.getUserByIdInternal(userId);
             return new UserNames(
                     stringField(user, "fullName", "full_name", "name"),
-                    stringField(user, "email")
+                    stringField(user, "email"),
+                    stringField(user, "profilePicture", "profile_picture")
             );
         } catch (Exception e) {
             log.debug("No se pudo enriquecer usuario {} de waitlist: {}", userId, e.getMessage());
-            return new UserNames(null, null);
+            return new UserNames(null, null, null);
         }
     }
 
@@ -418,5 +420,5 @@ public class RegistrationService {
         return null;
     }
 
-    private record UserNames(String fullName, String email) {}
+    private record UserNames(String fullName, String email, String profilePicture) {}
 }
