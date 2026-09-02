@@ -38,6 +38,7 @@ public class EventService {
     private static final int HORAS_DESPUES = 2;
     private static final int HORAS_RETENCION = 24;
     static final int MAX_EVENT_CAPACITY = 500;
+    static final List<EventStatus> CATALOG_STATUSES = List.of(EventStatus.draft, EventStatus.active);
     private static final DateTimeFormatter FECHA_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter HORA_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -62,20 +63,21 @@ public class EventService {
     }
 
     /**
-     * Eventos activos y vigentes que un usuario puede consultar/inscribirse.
+     * Eventos vigentes para consultar/inscribirse: draft (recién creados) y active.
+     * Pasan a active el día y hora del evento; finished se elimina 24 h después.
      */
     @Transactional
     public List<EventResponse> getAvailableEvents() {
         procesarEstadosEventos();
         LocalDate today = LocalDate.now(ZONA);
-        return eventRepository.findByStatusOrderByEventDateAscEventTimeAsc(EventStatus.active).stream()
+        return eventRepository.findByStatusInOrderByEventDateAscEventTimeAsc(CATALOG_STATUSES).stream()
                 .filter(event -> event.getEventDate() != null && !event.getEventDate().isBefore(today))
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
     }
 
     /**
-     * Calendario de eventos activos, opcionalmente filtrado por rango de fechas.
+     * Calendario de eventos visibles (draft y active), opcionalmente filtrado por rango.
      */
     @Transactional
     public List<CalendarEventResponse> getCalendar(LocalDate fromDate, LocalDate toDate) {
@@ -83,13 +85,13 @@ public class EventService {
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
         }
-        return eventRepository.findCalendarEvents(EventStatus.active, fromDate, toDate).stream()
+        return eventRepository.findCalendarEvents(CATALOG_STATUSES, fromDate, toDate).stream()
                 .map(this::convertToCalendarResponse)
                 .collect(Collectors.toList());
     }
 
     /**
-     * Búsqueda de eventos por texto y rango de fechas. Sin coincidencias → lista vacía.
+     * Búsqueda de eventos draft/active por texto y rango de fechas. Sin coincidencias → lista vacía.
      */
     @Transactional
     public List<EventResponse> searchEvents(String query, LocalDate fromDate, LocalDate toDate) {
@@ -98,7 +100,7 @@ public class EventService {
             throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
         }
         String q = query == null ? "" : query.trim();
-        return eventRepository.searchEvents(q, EventStatus.active, fromDate, toDate).stream()
+        return eventRepository.searchEvents(q, CATALOG_STATUSES, fromDate, toDate).stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
     }

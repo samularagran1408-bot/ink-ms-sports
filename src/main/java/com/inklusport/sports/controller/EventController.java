@@ -39,7 +39,7 @@ public class EventController {
     }
 
     /**
-     * Lista eventos activos disponibles para inscripción.
+     * Lista eventos vigentes (draft y active) disponibles para inscripción.
      */
     @GetMapping("/available")
     @PreAuthorize("permitAll()")
@@ -48,7 +48,7 @@ public class EventController {
     }
 
     /**
-     * Calendario de eventos activos. Si from/to no traen coincidencias, lista vacía.
+     * Calendario de eventos draft y active. Si from/to no traen coincidencias, lista vacía.
      */
     @GetMapping("/calendar")
     @PreAuthorize("permitAll()")
@@ -59,7 +59,7 @@ public class EventController {
     }
 
     /**
-     * Busca eventos activos por texto y rango de fechas.
+     * Busca eventos draft/active por texto y rango de fechas.
      */
     @GetMapping("/search")
     @PreAuthorize("permitAll()")

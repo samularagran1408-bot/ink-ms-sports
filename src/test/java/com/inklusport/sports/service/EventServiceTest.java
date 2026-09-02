@@ -120,7 +120,7 @@ class EventServiceTest {
         stubStatusTransitions();
         LocalDate from = LocalDate.of(2099, 1, 1);
         LocalDate to = LocalDate.of(2099, 1, 31);
-        when(eventRepository.findCalendarEvents(EventStatus.active, from, to)).thenReturn(List.of());
+        when(eventRepository.findCalendarEvents(EventService.CATALOG_STATUSES, from, to)).thenReturn(List.of());
 
         List<CalendarEventResponse> calendar = eventService.getCalendar(from, to);
 
@@ -154,6 +154,42 @@ class EventServiceTest {
         var created = eventService.createEvent(request);
         assertEquals("evt-ok", created.getId());
         assertEquals(20, created.getMaxCapacity());
+    }
+
+    @Test
+    void getAvailableEventsIncludesDraftUpcomingEvents() {
+        stubStatusTransitions();
+        LocalDate tomorrow = LocalDate.now().plusDays(1);
+        Event draft = Event.builder()
+                .id("draft-1")
+                .sportId(1)
+                .name("Waterpolo")
+                .eventDate(tomorrow)
+                .eventTime(LocalTime.of(7, 0))
+                .status(EventStatus.draft)
+                .maxCapacity(20)
+                .availableCapacity(20)
+                .build();
+        Event pastDraft = Event.builder()
+                .id("old-draft")
+                .sportId(1)
+                .name("Pasado")
+                .eventDate(LocalDate.now().minusDays(1))
+                .eventTime(LocalTime.of(7, 0))
+                .status(EventStatus.draft)
+                .maxCapacity(10)
+                .availableCapacity(10)
+                .build();
+
+        when(eventRepository.findByStatusInOrderByEventDateAscEventTimeAsc(EventService.CATALOG_STATUSES))
+                .thenReturn(List.of(draft, pastDraft));
+        when(sportRepository.findById(1)).thenReturn(Optional.of(Sport.builder().id(1).name("Natación").build()));
+
+        var available = eventService.getAvailableEvents();
+
+        assertEquals(1, available.size());
+        assertEquals("draft-1", available.get(0).getId());
+        assertEquals("draft", available.get(0).getStatus());
     }
 
     private void stubStatusTransitions() {

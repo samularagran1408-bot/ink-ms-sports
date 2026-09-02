@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface EventRepository extends JpaRepository<Event, String> {
@@ -18,19 +19,21 @@ public interface EventRepository extends JpaRepository<Event, String> {
 
     List<Event> findByStatusOrderByEventDateAscEventTimeAsc(EventStatus status);
 
+    List<Event> findByStatusInOrderByEventDateAscEventTimeAsc(Collection<EventStatus> statuses);
+
     List<Event> findByEventDateAndStatus(LocalDate eventDate, EventStatus status);
 
-    @Query("SELECT e FROM Event e WHERE e.status = :status " +
+    @Query("SELECT e FROM Event e WHERE e.status IN :statuses " +
            "AND (:fromDate IS NULL OR e.eventDate >= :fromDate) " +
            "AND (:toDate IS NULL OR e.eventDate <= :toDate) " +
            "ORDER BY e.eventDate ASC, e.eventTime ASC")
     List<Event> findCalendarEvents(
-            @Param("status") EventStatus status,
+            @Param("statuses") Collection<EventStatus> statuses,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
 
     @Query("SELECT e FROM Event e WHERE " +
-           "(:status IS NULL OR e.status = :status) " +
+           "e.status IN :statuses " +
            "AND (:fromDate IS NULL OR e.eventDate >= :fromDate) " +
            "AND (:toDate IS NULL OR e.eventDate <= :toDate) " +
            "AND (:q IS NULL OR :q = '' OR LOWER(e.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
@@ -39,7 +42,7 @@ public interface EventRepository extends JpaRepository<Event, String> {
            "ORDER BY e.eventDate ASC, e.eventTime ASC")
     List<Event> searchEvents(
             @Param("q") String q,
-            @Param("status") EventStatus status,
+            @Param("statuses") Collection<EventStatus> statuses,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
 
