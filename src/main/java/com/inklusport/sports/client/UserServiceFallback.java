@@ -19,6 +19,7 @@ public class UserServiceFallback implements UserServiceClient {
         fallback.put("fullName", "Usuario no disponible");
         fallback.put("email", "no-disponible@inklusport.com");
         fallback.put("trainerQuizPassed", false);
+        fallback.put("organizerQuizPassed", false);
         return fallback;
     }
 

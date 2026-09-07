@@ -1,6 +1,6 @@
 package com.inklusport.sports.dto;
 
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -22,7 +22,7 @@ public class EventRequest {
     private String description;
 
     @NotNull(message = "La fecha del evento es obligatoria")
-    @Future(message = "La fecha debe ser futura")
+    @FutureOrPresent(message = "La fecha no puede ser anterior a hoy")
     private LocalDate eventDate;
 
     @NotNull(message = "La hora del evento es obligatoria")

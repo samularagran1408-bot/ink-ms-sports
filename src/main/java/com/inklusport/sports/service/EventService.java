@@ -133,6 +133,7 @@ public class EventService {
     @Transactional
     public EventResponse createEvent(EventRequest request) {
         quizEligibilityService.assertOrganizerQuizPassed(request.getCreatedBy());
+        validateEventDateTime(request.getEventDate(), request.getEventTime());
         validateCapacity(request.getMaxCapacity());
         Sport sport = sportRepository.findById(request.getSportId())
                 .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
@@ -315,6 +316,18 @@ public class EventService {
         if (maxCapacity > MAX_EVENT_CAPACITY) {
             throw new IllegalStateException(
                     "El cupo del evento está excedido. El máximo permitido es " + MAX_EVENT_CAPACITY + ".");
+        }
+    }
+
+    /**
+     * Permite crear un evento para hoy si la hora todavía no ha pasado.
+     */
+    private void validateEventDateTime(LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            throw new IllegalArgumentException("La fecha y la hora del evento son obligatorias.");
+        }
+        if (!date.atTime(time).isAfter(ahora())) {
+            throw new IllegalArgumentException("La fecha y hora del evento deben ser futuras.");
         }
     }
 
