@@ -69,6 +69,9 @@ public class Event {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
     @PrePersist
     protected void onCreate() {
         if (id == null) id = UUID.randomUUID().toString();

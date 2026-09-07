@@ -23,6 +23,7 @@ public class UserIdentityService {
 
     private final UserServiceClient userServiceClient;
 
+    /** Principal JWT actual o null si es anónimo/ausente. */
     public String currentPrincipal() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
@@ -111,6 +112,7 @@ public class UserIdentityService {
         throw new IllegalArgumentException("trainerId es obligatorio sin autenticación.");
     }
 
+    /** Conjunto UUID/email del usuario para búsquedas históricas. */
     public Set<String> identityAliases(String userIdOrEmail) {
         Set<String> aliases = new LinkedHashSet<>();
         if (userIdOrEmail == null || userIdOrEmail.isBlank()) {
@@ -147,6 +149,7 @@ public class UserIdentityService {
         return aliases;
     }
 
+    /** UUID desde email vía users-ms; null si no se resuelve. */
     private String resolveIdByEmail(String email) {
         if (email == null || !email.contains("@")) {
             return null;
@@ -167,6 +170,7 @@ public class UserIdentityService {
         }
     }
 
+    /** Email desde UUID vía users-ms; null si no se resuelve. */
     private String resolveEmailById(String userId) {
         if (userId == null || userId.isBlank() || userId.contains("@")) {
             return null;
@@ -194,6 +198,7 @@ public class UserIdentityService {
         }
     }
 
+    /** True si el valor parece UUID (sin @ ni espacios, ≥32 chars). */
     private static boolean isUuidLike(String value) {
         if (value == null) {
             return false;

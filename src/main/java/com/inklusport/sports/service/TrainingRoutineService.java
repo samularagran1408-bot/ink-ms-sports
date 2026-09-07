@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/** Rutinas de entrenamiento: catálogo, alta, edición y publicación. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -31,6 +32,7 @@ public class TrainingRoutineService {
     private final UserIdentityService userIdentityService;
     private final QuizEligibilityService quizEligibilityService;
 
+    /** Lista rutinas publicadas. */
     @Transactional(readOnly = true)
     public List<RoutineResponse> listPublished() {
         return routineRepository.findByStatus(RoutineStatus.published).stream()
@@ -38,6 +40,7 @@ public class TrainingRoutineService {
                 .collect(Collectors.toList());
     }
 
+    /** Obtiene una rutina por ID; lanza si no existe. */
     @Transactional(readOnly = true)
     public RoutineResponse getById(String id) {
         TrainingRoutine routine = routineRepository.findById(id)
@@ -45,6 +48,7 @@ public class TrainingRoutineService {
         return toResponse(routine);
     }
 
+    /** Lista rutinas del entrenador resolviendo alias de identidad. */
     @Transactional(readOnly = true)
     public List<RoutineResponse> listByTrainer(String trainerId) {
         return userIdentityService.identityAliases(trainerId).stream()
@@ -153,6 +157,7 @@ public class TrainingRoutineService {
         return toResponse(routineRepository.save(routine));
     }
 
+    /** Exige dueño o admin; en docker sin auth no valida. Lanza si no es dueño. */
     private void assertOwner(TrainingRoutine routine) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
@@ -180,6 +185,7 @@ public class TrainingRoutineService {
         }
     }
 
+    /** Normaliza exercisesJson a JSON válido (array vacío si no aplica). */
     private String normalizeExercisesJson(String raw) {
         if (raw == null || raw.isBlank()) {
             return "[]";
@@ -197,6 +203,7 @@ public class TrainingRoutineService {
         return trimmed;
     }
 
+    /** Interpreta el nivel (ES/EN) o usa principiante por defecto. */
     private RoutineLevel parseLevel(String level) {
         if (level == null || level.isBlank()) {
             return RoutineLevel.principiante;
@@ -216,6 +223,7 @@ public class TrainingRoutineService {
         };
     }
 
+    /** Convierte la rutina a DTO de respuesta. */
     private RoutineResponse toResponse(TrainingRoutine r) {
         String sportName = null;
         if (r.getSport() != null) {

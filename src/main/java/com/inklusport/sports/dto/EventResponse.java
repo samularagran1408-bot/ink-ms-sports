@@ -25,4 +25,5 @@ public class EventResponse {
     private String status;
     private String createdBy;
     private LocalDateTime createdAt;
+    private LocalDateTime cancelledAt;
 }

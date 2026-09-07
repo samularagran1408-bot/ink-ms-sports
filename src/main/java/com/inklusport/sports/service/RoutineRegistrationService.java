@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Inscripciones de atletas a rutinas/sesiones de entrenamiento. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -26,6 +27,7 @@ public class RoutineRegistrationService {
     private final StaffNotificationService staffNotificationService;
     private final UserIdentityService userIdentityService;
 
+    /** Inscribe o reactiva al atleta; descuenta cupo y notifica (lleno/casi lleno). */
     @Transactional
     public RoutineRegistrationResponse register(RoutineRegistrationRequest request) {
         TrainingRoutine routine = routineRepository.findById(request.getRoutineId())
@@ -99,6 +101,7 @@ public class RoutineRegistrationService {
         return toResponse(saved, routine, "Inscripción confirmada a la rutina.");
     }
 
+    /** Cancela la inscripción, libera cupo y notifica a atleta y entrenador. */
     @Transactional
     public void cancel(String registrationId) {
         RoutineRegistration reg = registrationRepository.findById(registrationId)
@@ -132,6 +135,7 @@ public class RoutineRegistrationService {
         );
     }
 
+    /** Lista inscripciones del usuario resolviendo alias de identidad. */
     @Transactional(readOnly = true)
     public List<RoutineRegistrationResponse> byUser(String userId) {
         return userIdentityService.identityAliases(userId).stream()
@@ -146,6 +150,7 @@ public class RoutineRegistrationService {
                 .collect(Collectors.toList());
     }
 
+    /** Lista inscripciones de una rutina; lanza si no existe. */
     @Transactional(readOnly = true)
     public List<RoutineRegistrationResponse> byRoutine(String routineId) {
         TrainingRoutine routine = routineRepository.findById(routineId)
@@ -155,6 +160,7 @@ public class RoutineRegistrationService {
                 .collect(Collectors.toList());
     }
 
+    /** Notifica al atleta y al entrenador la nueva inscripción. */
     private void notifyRoutineJoined(TrainingRoutine routine, String userId) {
         staffNotificationService.notifyUser(
                 userId,
@@ -173,6 +179,7 @@ public class RoutineRegistrationService {
         );
     }
 
+    /** Convierte la inscripción a DTO de respuesta. */
     private RoutineRegistrationResponse toResponse(RoutineRegistration reg, TrainingRoutine routine, String message) {
         return RoutineRegistrationResponse.builder()
                 .id(reg.getId())

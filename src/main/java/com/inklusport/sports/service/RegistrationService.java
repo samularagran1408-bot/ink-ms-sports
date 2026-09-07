@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+/** Inscripciones a eventos, lista de espera y notificaciones asociadas. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -37,6 +38,7 @@ public class RegistrationService {
     private final UserIdentityService userIdentityService;
     private final UserServiceClient userServiceClient;
 
+    /** Inscribe al usuario o lo pone en waitlist; persiste cupo y notifica. */
     @Transactional
     public RegistrationResponse registerToEvent(RegistrationRequest request) {
         Event event = eventRepository.findById(request.getEventId())
@@ -130,6 +132,7 @@ public class RegistrationService {
         return convertToResponse(saved, statusMessage, event, null, null, null);
     }
 
+    /** Cancela la inscripción, libera cupo o promueve waitlist y notifica. */
     @Transactional
     public void cancelRegistration(String registrationId) {
         EventRegistration currentReg = registrationRepository.findById(registrationId)
@@ -188,6 +191,7 @@ public class RegistrationService {
         }
     }
 
+    /** Avisa al organizador de inscripción confirmada o ingreso a waitlist. */
     private void notifyOrganizerAboutRegistration(Event event, String athleteEmail, boolean confirmed, Integer waitlistPos) {
         if (event.getCreatedBy() == null || event.getCreatedBy().isBlank()) {
             return;
@@ -213,11 +217,13 @@ public class RegistrationService {
         }
     }
 
+    /** Envía una notificación al usuario indicado. */
     private void sendNotification(String userId, String type, String title, String body, String eventId) {
         log.info("Enviando notificación - Usuario: {}, Título: {}", userId, title);
         staffNotificationService.notifyUser(userId, type, title, body, eventId);
     }
 
+    /** Notifica al promovido de waitlist y al organizador. */
     @Transactional
     public void notifyPromotedWaitlistUser(String eventId, EventRegistration promotedReg) {
         String notificationType = "waitlist_promoted";
@@ -239,6 +245,7 @@ public class RegistrationService {
         );
     }
 
+    /** Avisa al usuario que avanzó de posición en la lista de espera. */
     @Transactional
     public void notifyWaitlistPositionUpdate(String eventId, EventRegistration registration) {
         Integer position = registration.getWaitlistPosition();
@@ -256,6 +263,7 @@ public class RegistrationService {
         sendNotification(registration.getUserId(), "waitlist_position_update", notificationTitle, notificationBody, eventId);
     }
 
+    /** Confirma el cupo ofertado desde waitlist y notifica. */
     @Transactional
     public void confirmWaitlistOffer(String userId, String eventId) {
         registrationRepository.updateWaitlistToConfirmed(userId, eventId);
@@ -267,12 +275,14 @@ public class RegistrationService {
         sendNotification(userId, notificationType, notificationTitle, notificationBody, eventId);
     }
 
+    /** Nombre del evento o un fallback genérico. */
     private String getEventName(String eventId) {
         return eventRepository.findById(eventId)
                 .map(Event::getName)
                 .orElse("el evento");
     }
 
+    /** Reasigna posiciones de waitlist y notifica a quienes avanzaron. */
     private void reorderWaitlist(String eventId) {
         List<EventRegistration> waitlist = registrationRepository
                 .findByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc(eventId);
@@ -292,6 +302,7 @@ public class RegistrationService {
         }
     }
 
+    /** Lista la waitlist del evento enriquecida con datos de usuario. */
     public List<RegistrationResponse> getWaitlistForEvent(String eventId) {
         Event event = eventRepository.findById(eventId).orElse(null);
         List<EventRegistration> waitlist = registrationRepository
@@ -305,6 +316,7 @@ public class RegistrationService {
                 .toList();
     }
 
+    /** Inscripciones del usuario (por alias de identidad), más recientes primero. */
     @Transactional(readOnly = true)
     public List<RegistrationResponse> getRegistrationsByUser(String userId) {
         Set<String> aliases = userIdentityService.identityAliases(userId);
@@ -328,6 +340,7 @@ public class RegistrationService {
         return responses;
     }
 
+    /** Indica si el usuario tiene inscripciones a eventos vigentes futuros. */
     @Transactional(readOnly = true)
     public FutureRegistrationsCheckResponse checkFutureRegistrations(String userId) {
         Set<String> aliases = userIdentityService.identityAliases(userId);
@@ -369,6 +382,7 @@ public class RegistrationService {
                 .build();
     }
 
+    /** Convierte la inscripción a DTO de respuesta. */
     private RegistrationResponse convertToResponse(EventRegistration reg, String statusMessage, Event event,
                                                    String userFullName, String userEmail, String userProfilePicture) {
         return RegistrationResponse.builder()
@@ -390,6 +404,7 @@ public class RegistrationService {
                 .build();
     }
 
+    /** Enriquece nombre, email y foto desde users-ms. */
     private UserNames resolveUserNames(String userId) {
         if (userId == null) {
             return new UserNames(null, null, null);
@@ -407,6 +422,7 @@ public class RegistrationService {
         }
     }
 
+    /** Primer valor no vacío entre las claves indicadas del mapa. */
     private String stringField(Map<String, Object> source, String... keys) {
         if (source == null) {
             return null;
@@ -420,5 +436,6 @@ public class RegistrationService {
         return null;
     }
 
+    /** Nombre, email y foto de perfil para listados de inscripción. */
     private record UserNames(String fullName, String email, String profilePicture) {}
 }

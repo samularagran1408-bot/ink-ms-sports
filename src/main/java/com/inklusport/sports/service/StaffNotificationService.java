@@ -33,6 +33,7 @@ public class StaffNotificationService {
     @Value("${notifications.admin-emails:}")
     private String adminEmails;
 
+    /** Envía una notificación al usuario (resuelve email); no lanza si falla. */
     public void notifyUser(String userIdOrEmail, String type, String title, String body, String eventId) {
         String recipient = resolveEmail(userIdOrEmail);
         if (recipient == null) {
@@ -42,6 +43,7 @@ public class StaffNotificationService {
         send(recipient, type, title, body, eventId, "high");
     }
 
+    /** Notifica al organizador y replica a admins (prefijo admin_). */
     public void notifyOrganizer(String organizerIdOrEmail, String type, String title, String body, String eventId) {
         String recipient = resolveEmail(organizerIdOrEmail);
         if (recipient != null) {
@@ -53,6 +55,7 @@ public class StaffNotificationService {
         notifyAdmins("admin_" + type, title, body, eventId, recipient);
     }
 
+    /** Notifica al entrenador y replica a admins (prefijo admin_). */
     public void notifyTrainer(String trainerIdOrEmail, String type, String title, String body, String eventId) {
         String recipient = resolveEmail(trainerIdOrEmail);
         if (recipient != null) {
@@ -64,10 +67,12 @@ public class StaffNotificationService {
         notifyAdmins("admin_" + type, title, body, eventId, recipient);
     }
 
+    /** Envía la notificación a todos los emails de admin configurados. */
     public void notifyAdmins(String type, String title, String body, String eventId) {
         notifyAdmins(type, title, body, eventId, null);
     }
 
+    /** Notifica a admins excluyendo el email indicado. */
     public void notifyAdmins(String type, String title, String body, String eventId, String excludeEmail) {
         Set<String> recipients = resolveAdminEmails();
         if (excludeEmail != null && !excludeEmail.isBlank()) {
@@ -80,6 +85,7 @@ public class StaffNotificationService {
         recipients.forEach(email -> send(email, type, title, body, eventId, "medium"));
     }
 
+    /** Une emails de config y rol ADMIN en users-ms. */
     private Set<String> resolveAdminEmails() {
         Set<String> emails = new LinkedHashSet<>();
 
@@ -106,6 +112,7 @@ public class StaffNotificationService {
         return emails;
     }
 
+    /** Persiste la notificación vía notification-ms; registra error sin relanzar. */
     private void send(String email, String type, String title, String body, String eventId, String priority) {
         try {
             NotificationRequest request = new NotificationRequest();
@@ -122,6 +129,7 @@ public class StaffNotificationService {
         }
     }
 
+    /** Convierte UUID o email a email válido; null si no se puede resolver. */
     private String resolveEmail(String userIdOrEmail) {
         if (userIdOrEmail == null || userIdOrEmail.isBlank()) {
             return null;

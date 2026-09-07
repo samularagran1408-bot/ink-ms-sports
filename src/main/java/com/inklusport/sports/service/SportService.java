@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Catálogo de deportes y sus discapacidades asociadas. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -21,16 +22,19 @@ public class SportService {
     private final SportRepository sportRepository;
     private final SportDisabilityRepository sportDisabilityRepository;
 
+    /** Lista todos los deportes. */
     @Transactional(readOnly = true)
     public List<SportResponse> getAllSports() {
         return sportRepository.findAll().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Lista solo los deportes activos. */
     @Transactional(readOnly = true)
     public List<SportResponse> getActiveSports() {
         return sportRepository.findByIsActiveTrue().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Obtiene un deporte por ID; lanza si no existe. */
     @Transactional(readOnly = true)
     public SportResponse getSportById(Integer id) {
         Sport sport = sportRepository.findById(id)
@@ -38,6 +42,7 @@ public class SportService {
         return convertToResponse(sport);
     }
 
+    /** Busca por ID o nombre; activeOnly filtra inactivos. */
     @Transactional(readOnly = true)
     public List<SportResponse> searchSports(String query, boolean activeOnly) {
         String q = query == null ? "" : query.trim();
@@ -57,6 +62,7 @@ public class SportService {
         return found.stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Crea un deporte; lanza si el nombre ya existe. */
     @Transactional
     public SportResponse createSport(SportRequest request) {
         if (sportRepository.existsByName(request.getName())) {
@@ -75,6 +81,7 @@ public class SportService {
         return convertToResponse(sportRepository.save(sport));
     }
 
+    /** Actualiza un deporte; lanza si no existe. */
     @Transactional
     public SportResponse updateSport(Integer id, SportRequest request) {
         Sport sport = sportRepository.findById(id)
@@ -89,6 +96,7 @@ public class SportService {
         return convertToResponse(sportRepository.save(sport));
     }
 
+    /** Elimina un deporte de forma permanente; lanza si no existe. */
     @Transactional
     public void deleteSport(Integer id) {
         if (!sportRepository.existsById(id)) {
@@ -97,6 +105,7 @@ public class SportService {
         sportRepository.deleteById(id);
     }
 
+    /** Convierte el deporte a DTO, incluyendo discapacidades activas. */
     private SportResponse convertToResponse(Sport sport) {
         List<DisabilityResponse> disabilities = sportDisabilityRepository.findDisabilitiesBySportId(sport.getId())
                 .stream()

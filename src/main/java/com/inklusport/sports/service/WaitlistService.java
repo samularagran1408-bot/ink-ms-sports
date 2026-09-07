@@ -11,17 +11,20 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Lista de espera persistida por evento (entidad Waitlist). */
 @Service
 @RequiredArgsConstructor
 public class WaitlistService {
 
     private final WaitlistRepository waitlistRepository;
 
+    /** Lista la waitlist del evento ordenada por posición. */
     @Transactional(readOnly = true)
     public List<WaitlistResponse> getWaitlistByEvent(String eventId) {
         return waitlistRepository.findByEventIdOrderByPositionAsc(eventId).stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Agrega al usuario al final de la waitlist y persiste. */
     @Transactional
     public WaitlistResponse addToWaitlist(WaitlistRequest request) {
         List<Waitlist> currentList = waitlistRepository.findByEventIdOrderByPositionAsc(request.getEventId());
@@ -33,6 +36,7 @@ public class WaitlistService {
         return convertToResponse(waitlistRepository.save(w));
     }
 
+    /** Convierte la entidad a DTO de respuesta. */
     private WaitlistResponse convertToResponse(Waitlist w) {
         return WaitlistResponse.builder()
                 .id(w.getId()).userId(w.getUserId()).eventId(w.getEventId())

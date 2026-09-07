@@ -24,6 +24,7 @@ import java.util.HashMap; /** Permite ejecutar CRUDS de forma rápida */
 import java.util.List;
 import java.util.Map;
 
+/** Registro de asistencia a eventos (manual, QR y masivo). */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -35,6 +36,7 @@ public class EventAttendanceService {
     private final QuizEligibilityService quizEligibilityService;
     private final UserServiceClient userServiceClient;
     private final UserIdentityService userIdentityService;
+    private final StaffNotificationService staffNotificationService;
 
     /**
      * Registra asistencia manual/admin; exige quiz de staff (organizador o entrenador).
@@ -58,6 +60,7 @@ public class EventAttendanceService {
         return recordAttendanceInternal(registration.getId(), CheckInMethod.qr.name(), verifiedBy);
     }
 
+    /** Datos de la inscripción a partir del QR, incluyendo si pertenece al usuario actual. */
     @Transactional(readOnly = true)
     public QrAttendanceInfoResponse getQrInfo(String rawQrCode) {
         EventRegistration registration = resolveRegistrationByQr(rawQrCode);
@@ -87,6 +90,7 @@ public class EventAttendanceService {
                 .build();
     }
 
+    /** Extrae el código QR y resuelve la inscripción; lanza si es inválido. */
     private EventRegistration resolveRegistrationByQr(String rawQrCode) {
         String qrCode = QrCodeParser.extract(rawQrCode);
         if (qrCode == null || qrCode.isBlank()) {
@@ -99,6 +103,7 @@ public class EventAttendanceService {
                 ));
     }
 
+    /** Persiste el check-in, marca asistencia y notifica; lanza si no aplica. */
     private String recordAttendanceInternal(String registrationId, String checkInMethod, String verifiedBy) {
         EventRegistration registration = eventRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -111,7 +116,7 @@ public class EventAttendanceService {
             );
         }
 
-        assertEventHasStarted(registration);
+        Event event = assertEventHasStarted(registration);
 
         if (eventAttendanceRepository.existsByRegistrationId(registrationId)) {
             throw new IllegalStateException(
@@ -154,10 +159,50 @@ public class EventAttendanceService {
             }
         }
 
+        notifyAttendance(event, registration);
         return "Asistencia confirmada exitosamente. Código de registro: " + saved.getId();
     }
 
-    private void assertEventHasStarted(EventRegistration registration) {
+    /** Notifica al atleta y al organizador (o admins) el check-in registrado. */
+    private void notifyAttendance(Event event, EventRegistration registration) {
+        try {
+            String eventName = event != null && event.getName() != null ? event.getName() : "un evento";
+            String eventId = registration.getEventId();
+            UserNames names = resolveUserNames(registration.getUserId());
+            String athlete = names.fullName != null && !names.fullName.isBlank()
+                    ? names.fullName
+                    : (names.email != null ? names.email : "Un atleta");
+
+            staffNotificationService.notifyUser(
+                    registration.getUserId(),
+                    "attendance_confirmed",
+                    "Asistencia confirmada",
+                    "Tu check-in en " + eventName + " quedó registrado.",
+                    eventId
+            );
+            if (event != null && event.getCreatedBy() != null && !event.getCreatedBy().isBlank()) {
+                staffNotificationService.notifyOrganizer(
+                        event.getCreatedBy(),
+                        "attendance_checkin",
+                        "Nuevo check-in",
+                        athlete + " registró asistencia en " + eventName + ".",
+                        eventId
+                );
+            } else {
+                staffNotificationService.notifyAdmins(
+                        "attendance_checkin",
+                        "Nuevo check-in",
+                        athlete + " registró asistencia en " + eventName + ".",
+                        eventId
+                );
+            }
+        } catch (Exception e) {
+            log.warn("No se pudo notificar el check-in de {}: {}", registration.getId(), e.getMessage());
+        }
+    }
+
+    /** Valida que el evento exista y ya haya comenzado; lanza si es prematuro. */
+    private Event assertEventHasStarted(EventRegistration registration) {
         if (registration.getEventId() == null || registration.getEventId().isBlank()) {
             throw new IllegalArgumentException("Error: La inscripción no tiene evento asociado.");
         }
@@ -166,7 +211,7 @@ public class EventAttendanceService {
                         "Error: El evento asociado a la inscripción no existe."
                 ));
         if (event.getEventDate() == null || event.getEventTime() == null) {
-            return;
+            return event;
         }
         LocalDateTime start = LocalDateTime.of(event.getEventDate(), event.getEventTime());
         if (LocalDateTime.now().isBefore(start)) {
@@ -175,6 +220,7 @@ public class EventAttendanceService {
                             + event.getEventDate() + " " + event.getEventTime() + "."
             );
         }
+        return event;
     }
 
     /**
@@ -212,6 +258,7 @@ public class EventAttendanceService {
         return result;
     }
 
+    /** Arma el reporte de asistentes y ausentes del evento; lanza si no existe. */
     @Transactional(readOnly = true)
     public AttendanceReportResponse getAttendanceReport(String eventId) {
         if (eventId == null || eventId.isBlank()) {
@@ -289,6 +336,7 @@ public class EventAttendanceService {
                 .build();
     }
 
+    /** Enriquece nombre, email y foto desde users-ms; no falla el flujo. */
     private UserNames resolveUserNames(String userId) {
         if (userId == null) {
             return new UserNames(null, null, null);
@@ -306,8 +354,10 @@ public class EventAttendanceService {
         }
     }
 
+    /** Nombre, email y foto de perfil para reportes de asistencia. */
     private record UserNames(String fullName, String email, String profilePicture) {}
 
+    /** Primer valor no vacío entre las claves indicadas del mapa. */
     private String stringField(Map<String, Object> source, String... keys) {
         if (source == null) {
             return null;
@@ -321,18 +371,21 @@ public class EventAttendanceService {
         return null;
     }
 
+    /** Lista global de registros de asistencia. */
     @Transactional(readOnly = true)
     public List<EventAttendance> getAllAttendances() {
         log.info("Obteniendo listado global de asistencias");
         return eventAttendanceRepository.findAll();
     }
 
+    /** Lista asistencias asociadas a un evento. */
     @Transactional(readOnly = true)
     public List<EventAttendance> getAttendancesByEvent(String eventId) {
         log.info("Obteniendo asistencias para el evento con ID: {}", eventId);
         return eventAttendanceRepository.findByRegistration_EventId(eventId);
     }
 
+    /** Lista asistencias de una inscripción. */
     @Transactional(readOnly = true)
     public List<EventAttendance> getAttendancesByRegistration(String registrationId) {
         log.info("Obteniendo asistencias para la inscripción con ID: {}", registrationId);

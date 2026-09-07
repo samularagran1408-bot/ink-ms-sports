@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/** Recordatorios programados para eventos que inician en 2 horas. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -32,6 +33,7 @@ public class EventReminderService {
         sendEventReminders(LocalDateTime.now());
     }
 
+    /** Busca eventos en la ventana de 2 horas y dispara recordatorios. */
     @Transactional
     void sendEventReminders(LocalDateTime now) {
         LocalDateTime windowEnd = now.plusHours(2);
@@ -57,6 +59,7 @@ public class EventReminderService {
         }
     }
 
+    /** Notifica inscritos y organizador; marca reminderSentAt al persistir. */
     private void sendRemindersForEvent(Event event) {
         List<EventRegistration> registrations = registrationRepository
                 .findByEventIdAndWaitlistPositionIsNullAndReminderSentAtIsNull(event.getId());

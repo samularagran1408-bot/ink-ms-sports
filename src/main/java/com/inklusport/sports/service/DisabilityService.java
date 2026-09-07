@@ -11,22 +11,26 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Catálogo de discapacidades: consulta, alta, edición y activación. */
 @Service
 @RequiredArgsConstructor
 public class DisabilityService {
 
     private final DisabilityRepository disabilityRepository;
 
+    /** Lista todas las discapacidades, activas e inactivas. */
     @Transactional(readOnly = true)
     public List<DisabilityResponse> getAllDisabilities() {
         return disabilityRepository.findAll().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Lista solo las discapacidades activas. */
     @Transactional(readOnly = true)
     public List<DisabilityResponse> getActiveDisabilities() {
         return disabilityRepository.findByIsActiveTrue().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Obtiene una discapacidad por ID; lanza si no existe. */
     @Transactional(readOnly = true)
     public DisabilityResponse getDisabilityById(Integer id) {
         return convertToResponse(requireDisability(id));
@@ -56,6 +60,7 @@ public class DisabilityService {
                 .collect(Collectors.toList());
     }
 
+    /** Crea una discapacidad; persiste y lanza si el nombre ya existe. */
     @Transactional
     public DisabilityResponse createDisability(DisabilityRequest request) {
         String name = normalizeName(request.getName());
@@ -71,6 +76,7 @@ public class DisabilityService {
         return convertToResponse(disabilityRepository.save(d));
     }
 
+    /** Actualiza una discapacidad; lanza si no existe o el nombre está duplicado. */
     @Transactional
     public DisabilityResponse updateDisability(Integer id, DisabilityRequest request) {
         Disability d = requireDisability(id);
@@ -87,6 +93,7 @@ public class DisabilityService {
         return convertToResponse(disabilityRepository.save(d));
     }
 
+    /** Desactiva una discapacidad; lanza si no existe o ya estaba inactiva. */
     @Transactional
     public DisabilityResponse deactivateDisability(Integer id) {
         Disability d = requireDisability(id);
@@ -97,6 +104,7 @@ public class DisabilityService {
         return convertToResponse(disabilityRepository.save(d));
     }
 
+    /** Reactiva una discapacidad; lanza si no existe o ya estaba activa. */
     @Transactional
     public DisabilityResponse activateDisability(Integer id) {
         Disability d = requireDisability(id);
@@ -107,6 +115,7 @@ public class DisabilityService {
         return convertToResponse(disabilityRepository.save(d));
     }
 
+    /** Elimina una discapacidad de forma permanente; lanza si no existe. */
     @Transactional
     public void deleteDisability(Integer id) {
         if (!disabilityRepository.existsById(id)) {
@@ -115,11 +124,13 @@ public class DisabilityService {
         disabilityRepository.deleteById(id);
     }
 
+    /** Carga la discapacidad o lanza ResourceNotFoundException. */
     private Disability requireDisability(Integer id) {
         return disabilityRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Discapacidad no encontrada con ID: " + id));
     }
 
+    /** Recorta el nombre y lanza si viene vacío. */
     private String normalizeName(String name) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("El nombre de la discapacidad es obligatorio.");
@@ -127,6 +138,7 @@ public class DisabilityService {
         return name.trim();
     }
 
+    /** Convierte la entidad a DTO de respuesta. */
     private DisabilityResponse convertToResponse(Disability d) {
         return DisabilityResponse.builder().id(d.getId()).name(d.getName())
                 .description(d.getDescription()).category(d.getCategory()).isActive(d.getIsActive()).build();

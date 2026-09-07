@@ -16,6 +16,7 @@ import com.inklusport.sports.repository.SportRepository;
 import com.inklusport.sports.util.EventImageDefaults;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+/** Ciclo de vida de eventos: catálogo, calendario y transiciones de estado. */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -49,12 +51,14 @@ public class EventService {
     private final StaffNotificationService staffNotificationService;
     private final QuizEligibilityService quizEligibilityService;
 
+    /** Lista todos los eventos tras actualizar estados (activa/finaliza/elimina). */
     @Transactional
     public List<EventResponse> getAllEvents() {
         procesarEstadosEventos();
         return eventRepository.findAll().stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
+    /** Obtiene un evento por ID; lanza si no existe. */
     @Transactional(readOnly = true)
     public EventResponse getEventById(String eventId) {
         Event event = eventRepository.findById(eventId)
@@ -65,6 +69,7 @@ public class EventService {
     /**
      * Eventos vigentes para consultar/inscribirse: draft (recién creados) y active.
      * Pasan a active el día y hora del evento; finished se elimina 24 h después.
+     * Cancelled permanece 2 h y luego se elimina.
      */
     @Transactional
     public List<EventResponse> getAvailableEvents() {
@@ -122,6 +127,7 @@ public class EventService {
         }
 
         event.setStatus(EventStatus.cancelled);
+        event.setCancelledAt(ahora());
         Event saved = eventRepository.saveAndFlush(event);
         notifyRegistrantsAboutCancellation(saved);
         return convertToResponse(saved);
@@ -243,6 +249,7 @@ public class EventService {
         return convertToResponse(eventRepository.findById(saved.getId()).orElse(saved));
     }
 
+    /** Notifica inscritos y admins un cambio de fecha, hora o lugar. */
     private void notifyRegistrantsAboutScheduleOrLocationChange(
             Event event,
             LocalDate oldDate,
@@ -288,6 +295,7 @@ public class EventService {
         log.info("Notificados {} inscritos por cambio en evento {}", registrations.size(), event.getId());
     }
 
+    /** Notifica inscritos y admins la cancelación del evento. */
     private void notifyRegistrantsAboutCancellation(Event event) {
         String title = "Evento cancelado";
         String body = "El evento \"" + event.getName() + "\" fue cancelado.";
@@ -309,6 +317,7 @@ public class EventService {
         );
     }
 
+    /** Valida el cupo máximo permitido; lanza si es inválido o excede el tope. */
     private void validateCapacity(Integer maxCapacity) {
         if (maxCapacity == null || maxCapacity <= 0) {
             throw new IllegalArgumentException("El cupo máximo debe ser mayor a 0.");
@@ -331,6 +340,7 @@ public class EventService {
         }
     }
 
+    /** Formatea fecha y hora para mensajes de notificación. */
     private String formatDateTime(LocalDate date, LocalTime time) {
         if (date == null) {
             return "sin fecha";
@@ -342,6 +352,7 @@ public class EventService {
         return d + " " + time.format(HORA_FMT);
     }
 
+    /** Normaliza el lugar (trim) o cadena vacía si no hay valor. */
     private String normalizeLocation(String location) {
         if (location == null || location.isBlank()) {
             return "";
@@ -349,19 +360,23 @@ public class EventService {
         return location.trim();
     }
 
+    /** Texto amigable del lugar, o "sin ubicación" si está vacío. */
     private String displayLocation(String location) {
         String normalized = normalizeLocation(location);
         return normalized.isEmpty() ? "sin ubicación" : normalized;
     }
 
+    /** Fecha-hora actual en zona America/Bogota. */
     private LocalDateTime ahora() {
         return LocalDateTime.now(ZONA);
     }
 
+    /** Combina fecha y hora de inicio del evento. */
     private LocalDateTime fechaHoraEvento(Event event) {
         return event.getEventDate().atTime(event.getEventTime());
     }
 
+    /** Pasa a active los draft cuya hora de inicio ya llegó; persiste cambios. */
     @Transactional
     public int activarEventos() {
         log.info("[EventService] Activando eventos (DRAFT → ACTIVE)");
@@ -393,6 +408,7 @@ public class EventService {
         return contador;
     }
 
+    /** Pasa a finished los active transcurridas 2 h desde el inicio. */
     @Transactional
     public int finalizarEventos() {
         log.info("[EventService] Finalizando eventos (ACTIVE → FINISHED)");
@@ -424,6 +440,7 @@ public class EventService {
         return contador;
     }
 
+    /** Borra finished (y sus asistencias) 24 h después de finalizar. */
     @Transactional
     public int eliminarEventosExpirados() {
         log.info("[EventService] Eliminando eventos finalizados (>24h después de finalizar)");
@@ -445,9 +462,7 @@ public class EventService {
 
         int contador = 0;
         for (Event evento : eventosAEliminar) {
-            eventAttendanceRepository.deleteAll(
-                    eventAttendanceRepository.findByRegistration_EventId(evento.getId()));
-            eventRepository.delete(evento);
+            borrarEventoConAsistencias(evento);
             contador++;
             log.info("[EventService] Evento eliminado: '{}' (Fecha: {}, Hora: {})",
                     evento.getName(), evento.getEventDate(), evento.getEventTime());
@@ -457,20 +472,75 @@ public class EventService {
         return contador;
     }
 
+    /** Borra cancelled 2 h después de la cancelación. */
+    @Transactional
+    public int eliminarEventosCancelados() {
+        log.info("[EventService] Eliminando eventos cancelados (>2h después de cancelar)");
+
+        LocalDateTime ahora = ahora();
+        List<Event> eventosAEliminar = eventRepository.findByStatus(EventStatus.cancelled).stream()
+                .filter(evento -> canceladoDebeDesaparecer(evento, ahora))
+                .toList();
+
+        if (eventosAEliminar.isEmpty()) {
+            log.info("[EventService] No hay eventos cancelados para eliminar");
+            return 0;
+        }
+
+        log.info("[EventService] Eventos cancelados encontrados para eliminar: {}", eventosAEliminar.size());
+
+        int contador = 0;
+        for (Event evento : eventosAEliminar) {
+            borrarEventoConAsistencias(evento);
+            contador++;
+            log.info("[EventService] Evento cancelado eliminado: '{}' (Cancelado en: {})",
+                    evento.getName(), evento.getCancelledAt());
+        }
+
+        log.info("[EventService] Total eventos cancelados eliminados: {}", contador);
+        return contador;
+    }
+
+    /** True si el cancelado ya cumplió 2 h (o no tiene marca, legado). */
+    private boolean canceladoDebeDesaparecer(Event evento, LocalDateTime ahora) {
+        LocalDateTime canceladoEn = evento.getCancelledAt();
+        if (canceladoEn == null) {
+            return true;
+        }
+        return !canceladoEn.plusHours(HORAS_DESPUES).isAfter(ahora);
+    }
+
+    /** Borra asistencias y luego el evento (inscripciones/espera caen por FK). */
+    private void borrarEventoConAsistencias(Event evento) {
+        eventAttendanceRepository.deleteAll(
+                eventAttendanceRepository.findByRegistration_EventId(evento.getId()));
+        eventRepository.delete(evento);
+    }
+
+    /** Encadena activar, finalizar y eliminar eventos expirados o cancelados. */
     @Transactional
     public void procesarEstadosEventos() {
         log.info("[EventService] Procesando estados de eventos");
 
         int activados = activarEventos();
         int finalizados = finalizarEventos();
+        int cancelados = eliminarEventosCancelados();
         int eliminados = eliminarEventosExpirados();
 
-        if (activados > 0 || finalizados > 0 || eliminados > 0) {
-            log.info("[EventService] Resumen: Activados: {}, Finalizados: {}, Eliminados: {}",
-                    activados, finalizados, eliminados);
+        if (activados > 0 || finalizados > 0 || cancelados > 0 || eliminados > 0) {
+            log.info("[EventService] Resumen: Activados: {}, Finalizados: {}, Cancelados: {}, Eliminados: {}",
+                    activados, finalizados, cancelados, eliminados);
         }
     }
 
+    /** Cada minuto aplica transiciones para que los cancelados desaparezcan a las 2 h. */
+    @Scheduled(cron = "0 * * * * *")
+    @Transactional
+    public void procesarEstadosEventosProgramado() {
+        procesarEstadosEventos();
+    }
+
+    /** Convierte el evento a DTO de detalle, con portada por defecto si falta. */
     private EventResponse convertToResponse(Event event) {
         Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
         String sportName = sport != null ? sport.getName() : "N/A";
@@ -495,9 +565,11 @@ public class EventService {
                 .status(event.getStatus() != null ? event.getStatus().name() : null)
                 .createdBy(event.getCreatedBy())
                 .createdAt(event.getCreatedAt())
+                .cancelledAt(event.getCancelledAt())
                 .build();
     }
 
+    /** Convierte el evento a DTO de calendario. */
     private CalendarEventResponse convertToCalendarResponse(Event event) {
         Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
         return CalendarEventResponse.builder()

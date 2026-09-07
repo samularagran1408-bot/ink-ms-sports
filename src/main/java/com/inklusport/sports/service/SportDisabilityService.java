@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Asociación deporte–discapacidad y texto de adaptaciones. */
 @Service
 @RequiredArgsConstructor
 public class SportDisabilityService {
@@ -23,6 +24,7 @@ public class SportDisabilityService {
     private final SportRepository sportRepository;
     private final DisabilityRepository disabilityRepository;
 
+    /** Adaptaciones de un deporte; lanza si el deporte no existe. */
     @Transactional(readOnly = true)
     public List<SportDisabilityResponse> getSportDisabilities(Integer sportId) {
         if (!sportRepository.existsById(sportId)) {
@@ -33,6 +35,7 @@ public class SportDisabilityService {
                 .collect(Collectors.toList());
     }
 
+    /** Todas las asociaciones con discapacidades activas. */
     @Transactional(readOnly = true)
     public List<SportDisabilityResponse> getAllAssociations() {
         return sportDisabilityRepository.findAllWithActiveDisabilities().stream()
@@ -40,6 +43,7 @@ public class SportDisabilityService {
                 .collect(Collectors.toList());
     }
 
+    /** Busca asociaciones activas por texto; sin query lista todas. */
     @Transactional(readOnly = true)
     public List<SportDisabilityResponse> searchAssociations(String query) {
         String q = query == null ? "" : query.trim();
@@ -51,6 +55,7 @@ public class SportDisabilityService {
                 .collect(Collectors.toList());
     }
 
+    /** Crea la asociación y adaptaciones; lanza si la discapacidad está inactiva. */
     @Transactional
     public SportDisabilityResponse addAdaptation(SportDisabilityRequest request) {
         /**
@@ -78,6 +83,7 @@ public class SportDisabilityService {
         return convertToResponse(sportDisabilityRepository.save(sd));
     }
 
+    /** Actualiza el texto de adaptaciones; lanza si la relación no existe. */
     @Transactional
     public SportDisabilityResponse updateAdaptation(Integer sportId, Integer disabilityId, SportDisabilityRequest request) {
         SportDisability.SportDisabilityId id = new SportDisability.SportDisabilityId(sportId, disabilityId);
@@ -87,12 +93,14 @@ public class SportDisabilityService {
         return convertToResponse(sportDisabilityRepository.save(sd));
     }
 
+    /** Elimina la asociación deporte–discapacidad. */
     @Transactional
     public void removeAdaptation(Integer sportId, Integer disabilityId) {
         SportDisability.SportDisabilityId id = new SportDisability.SportDisabilityId(sportId, disabilityId);
         sportDisabilityRepository.deleteById(id);
     }
 
+    /** Convierte la entidad a DTO de respuesta. */
     private SportDisabilityResponse convertToResponse(SportDisability sd) {
         /**
          * valores numéricos y los casteamos de forma segura
