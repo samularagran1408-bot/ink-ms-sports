@@ -35,6 +35,7 @@ public class AttendanceReportResponse {
         private LocalDateTime checkInTime;
         private String checkInMethod;
         private String verifiedBy;
+        private String notes;
     }
 
     @Data

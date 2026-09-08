@@ -10,4 +10,5 @@ public class BulkAttendanceRequest {
     private List<String> registrationIds = new ArrayList<>();
     private String checkInMethod;
     private String verifiedBy;
+    private String notes;
 }

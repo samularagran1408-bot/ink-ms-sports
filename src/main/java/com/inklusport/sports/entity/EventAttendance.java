@@ -37,6 +37,10 @@ public class EventAttendance {
     @Column(name = "verified_by", length = 36)
     private String verifiedBy;
 
+    /** Comentario opcional del usuario (o del staff) al hacer check-in. */
+    @Column(name = "notes", length = 500)
+    private String notes;
+
 
     @PrePersist
     protected void onCreate() {

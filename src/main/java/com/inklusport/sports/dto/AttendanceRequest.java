@@ -10,4 +10,6 @@ public class AttendanceRequest {
     private String checkInMethod;
     
     private String verifiedBy;
+
+    private String notes;
 }

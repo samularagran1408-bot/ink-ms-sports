@@ -47,7 +47,8 @@ public class EventAttendanceService {
         return recordAttendanceInternal(
                 request.getRegistrationId(),
                 request.getCheckInMethod(),
-                request.getVerifiedBy()
+                request.getVerifiedBy(),
+                request.getNotes()
         );
     }
 
@@ -55,9 +56,9 @@ public class EventAttendanceService {
      * Check-in por código QR de la inscripción (sin quiz de staff).
      */
     @Transactional
-    public String recordAttendanceByQr(String qrCode, String verifiedBy) {
+    public String recordAttendanceByQr(String qrCode, String verifiedBy, String notes) {
         EventRegistration registration = resolveRegistrationByQr(qrCode);
-        return recordAttendanceInternal(registration.getId(), CheckInMethod.qr.name(), verifiedBy);
+        return recordAttendanceInternal(registration.getId(), CheckInMethod.qr.name(), verifiedBy, notes);
     }
 
     /** Datos de la inscripción a partir del QR, incluyendo si pertenece al usuario actual. */
@@ -104,7 +105,12 @@ public class EventAttendanceService {
     }
 
     /** Persiste el check-in, marca asistencia y notifica; lanza si no aplica. */
-    private String recordAttendanceInternal(String registrationId, String checkInMethod, String verifiedBy) {
+    private String recordAttendanceInternal(
+            String registrationId,
+            String checkInMethod,
+            String verifiedBy,
+            String notes
+    ) {
         EventRegistration registration = eventRegistrationRepository.findById(registrationId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Error: La inscripción con ID '" + registrationId + "' no existe."
@@ -138,6 +144,7 @@ public class EventAttendanceService {
                 .registrationId(registrationId)
                 .checkInMethod(method)
                 .verifiedBy(verifiedBy)
+                .notes(normalizeNotes(notes))
                 .build();
 
         EventAttendance saved = eventAttendanceRepository.save(attendance);
@@ -232,6 +239,7 @@ public class EventAttendanceService {
         List<String> ids = request.getRegistrationIds() == null ? List.of() : request.getRegistrationIds();
         String method = request.getCheckInMethod() == null ? CheckInMethod.admin.name() : request.getCheckInMethod();
         String verifiedBy = request.getVerifiedBy();
+        String notes = request.getNotes();
 
         int succeeded = 0;
         int failed = 0;
@@ -241,7 +249,7 @@ public class EventAttendanceService {
                 continue;
             }
             try {
-                recordAttendanceInternal(registrationId.trim(), method, verifiedBy);
+                recordAttendanceInternal(registrationId.trim(), method, verifiedBy, notes);
                 succeeded++;
             } catch (Exception e) {
                 failed++;
@@ -299,6 +307,7 @@ public class EventAttendanceService {
                             ? attendance.getCheckInMethod().name()
                             : null)
                     .verifiedBy(attendance.getVerifiedBy())
+                    .notes(attendance.getNotes())
                     .build());
         }
 
@@ -356,6 +365,18 @@ public class EventAttendanceService {
 
     /** Nombre, email y foto de perfil para reportes de asistencia. */
     private record UserNames(String fullName, String email, String profilePicture) {}
+
+    /** Recorta y limita el comentario de asistencia; vacío → null. */
+    private String normalizeNotes(String notes) {
+        if (notes == null) {
+            return null;
+        }
+        String trimmed = notes.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed;
+    }
 
     /** Primer valor no vacío entre las claves indicadas del mapa. */
     private String stringField(Map<String, Object> source, String... keys) {

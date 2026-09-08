@@ -75,9 +75,7 @@ public class SportService {
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .build();
 
-        if (request.getDifficulty() != null) {
-            sport.setDifficulty(Sport.DifficultyLevel.valueOf(request.getDifficulty()));
-        }
+        sport.setDifficulty(parseDifficulty(request.getDifficulty()));
         return convertToResponse(sportRepository.save(sport));
     }
 
@@ -88,8 +86,8 @@ public class SportService {
                 .orElseThrow(() -> new RuntimeException("Deporte no encontrado con ID: " + id));
         sport.setName(request.getName());
         sport.setDescription(request.getDescription());
-        if (request.getDifficulty() != null) {
-            sport.setDifficulty(Sport.DifficultyLevel.valueOf(request.getDifficulty()));
+        if (request.getDifficulty() != null && !request.getDifficulty().isBlank()) {
+            sport.setDifficulty(parseDifficulty(request.getDifficulty()));
         }
         sport.setRequiredMaterials(request.getRequiredMaterials());
         sport.setIsActive(request.getIsActive());
@@ -120,5 +118,26 @@ public class SportService {
                 .difficulty(sport.getDifficulty() != null ? sport.getDifficulty().name() : null)
                 .requiredMaterials(sport.getRequiredMaterials()).isActive(sport.getIsActive())
                 .createdAt(sport.getCreatedAt()).disabilities(disabilities).build();
+    }
+
+    /** Acepta bajo/medio/alto y alias (intermedio, intermediate, principiante…). */
+    private Sport.DifficultyLevel parseDifficulty(String difficulty) {
+        if (difficulty == null || difficulty.isBlank()) {
+            return Sport.DifficultyLevel.medio;
+        }
+        String n = difficulty.trim().toLowerCase();
+        return switch (n) {
+            case "bajo", "baja", "principiante", "beginner", "easy", "low" -> Sport.DifficultyLevel.bajo;
+            case "alto", "alta", "avanzado", "advanced", "hard", "high" -> Sport.DifficultyLevel.alto;
+            case "medio", "media", "intermedio", "intermedia", "intermediate", "medium", "moderado" ->
+                    Sport.DifficultyLevel.medio;
+            default -> {
+                try {
+                    yield Sport.DifficultyLevel.valueOf(n);
+                } catch (IllegalArgumentException e) {
+                    yield Sport.DifficultyLevel.medio;
+                }
+            }
+        };
     }
 }

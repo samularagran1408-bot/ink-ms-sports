@@ -6,4 +6,5 @@ import lombok.Data;
 public class QrAttendanceRequest {
     private String qrCode;
     private String verifiedBy;
+    private String notes;
 }

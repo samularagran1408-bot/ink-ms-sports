@@ -97,7 +97,8 @@ public class EventAttendanceController {
         try {
             String successMessage = eventAttendanceService.recordAttendanceByQr(
                     request.getQrCode(),
-                    request.getVerifiedBy()
+                    request.getVerifiedBy(),
+                    request.getNotes()
             );
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
