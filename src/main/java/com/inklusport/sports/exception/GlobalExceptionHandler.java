@@ -1,5 +1,6 @@
 package com.inklusport.sports.exception;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -63,10 +64,10 @@ public class GlobalExceptionHandler {
                 "Revisa fecha, hora y cupo. El formato de los datos no es válido.");
     }
 
-    @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
-        return buildResponse(HttpStatus.FORBIDDEN, "FORBIDDEN",
-                "No tienes permiso para crear o gestionar eventos.");
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConflict(DataIntegrityViolationException ex) {
+        return buildResponse(HttpStatus.CONFLICT, "CONFLICT",
+                "El usuario ya se encuentra registrado en este evento.");
     }
 
     /**

@@ -10,7 +10,15 @@ import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "event")
+@Table(
+        name = "event",
+        indexes = {
+                @Index(name = "idx_event_date", columnList = "event_date"),
+                @Index(name = "idx_event_status", columnList = "status"),
+                @Index(name = "idx_event_status_date", columnList = "status, event_date, event_time"),
+                @Index(name = "idx_event_created_by", columnList = "created_by")
+        }
+)
 @Data
 @Builder
 @NoArgsConstructor

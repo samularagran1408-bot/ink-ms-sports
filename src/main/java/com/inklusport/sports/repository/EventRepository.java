@@ -2,7 +2,11 @@ package com.inklusport.sports.repository;
 
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.enums.EventStatus;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface EventRepository extends JpaRepository<Event, String> {
 
@@ -45,6 +50,27 @@ public interface EventRepository extends JpaRepository<Event, String> {
             @Param("statuses") Collection<EventStatus> statuses,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate);
+
+    @Query("SELECT e FROM Event e LEFT JOIN e.sport s WHERE " +
+           "e.status IN :statuses " +
+           "AND (:createdBy IS NULL OR :createdBy = '' OR e.createdBy = :createdBy) " +
+           "AND (:fromDate IS NULL OR e.eventDate >= :fromDate) " +
+           "AND (:toDate IS NULL OR e.eventDate <= :toDate) " +
+           "AND (:q IS NULL OR :q = '' OR LOWER(e.name) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(COALESCE(e.location, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(COALESCE(e.description, '')) LIKE LOWER(CONCAT('%', :q, '%')) " +
+           "OR LOWER(COALESCE(s.name, '')) LIKE LOWER(CONCAT('%', :q, '%')))")
+    Page<Event> searchEventsPage(
+            @Param("q") String q,
+            @Param("statuses") Collection<EventStatus> statuses,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("createdBy") String createdBy,
+            Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM Event e WHERE e.id = :id")
+    Optional<Event> findByIdForUpdate(@Param("id") String id);
 
     long countByStatus(EventStatus status);
 

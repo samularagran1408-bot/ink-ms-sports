@@ -84,7 +84,7 @@ class RegistrationServiceTest {
 
         when(registrationRepository.findById("reg-confirmed"))
                 .thenReturn(Optional.of(canceledRegistration));
-        when(eventRepository.findById("event-1")).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdForUpdate("event-1")).thenReturn(Optional.of(event));
         when(registrationRepository.findFirstByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc("event-1"))
                 .thenReturn(Optional.of(promotedRegistration));
         when(registrationRepository.save(promotedRegistration)).thenReturn(promotedRegistration);
@@ -149,7 +149,7 @@ class RegistrationServiceTest {
 
         when(registrationRepository.findById("reg-waitlist-1"))
                 .thenReturn(Optional.of(leavingWaitlist));
-        when(eventRepository.findById("event-1")).thenReturn(Optional.of(event));
+        when(eventRepository.findByIdForUpdate("event-1")).thenReturn(Optional.of(event));
         when(registrationRepository.findByEventIdAndWaitlistPositionIsNotNullOrderByWaitlistPositionAsc("event-1"))
                 .thenReturn(List.of(secondInLine));
 

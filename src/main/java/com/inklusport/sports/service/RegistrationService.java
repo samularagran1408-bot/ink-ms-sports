@@ -11,6 +11,7 @@ import com.inklusport.sports.repository.EventRegistrationRepository;
 import com.inklusport.sports.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +42,7 @@ public class RegistrationService {
     /** Inscribe al usuario o lo pone en waitlist; persiste cupo y notifica. */
     @Transactional
     public RegistrationResponse registerToEvent(RegistrationRequest request) {
-        Event event = eventRepository.findById(request.getEventId())
+        Event event = eventRepository.findByIdForUpdate(request.getEventId())
             .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
 
         if (event.getStatus() == EventStatus.cancelled) {
@@ -110,7 +111,12 @@ public class RegistrationService {
             confirmed = false;
         }
 
-        EventRegistration saved = registrationRepository.saveAndFlush(registration);
+        EventRegistration saved;
+        try {
+            saved = registrationRepository.saveAndFlush(registration);
+        } catch (DataIntegrityViolationException ex) {
+            throw new IllegalStateException("El usuario ya se encuentra registrado.");
+        }
 
         sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
 
@@ -145,7 +151,7 @@ public class RegistrationService {
         String eventId = currentReg.getEventId();
         Integer posicionEliminada = currentReg.getWaitlistPosition();
         String cancelledUser = currentReg.getUserId();
-        Event event = eventRepository.findById(eventId).orElse(null);
+        Event event = eventRepository.findByIdForUpdate(eventId).orElse(null);
 
         if (event != null && event.getStatus() == EventStatus.finished) {
             throw new IllegalStateException("No es posible cancelar la inscripción de un evento finalizado.");

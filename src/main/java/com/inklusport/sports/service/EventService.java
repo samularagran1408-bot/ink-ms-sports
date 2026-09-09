@@ -4,6 +4,7 @@ import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventResponse;
 import com.inklusport.sports.dto.EventUpdateRequest;
+import com.inklusport.sports.dto.PageResponse;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
 import com.inklusport.sports.entity.Sport;
@@ -16,6 +17,10 @@ import com.inklusport.sports.repository.SportRepository;
 import com.inklusport.sports.util.EventImageDefaults;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,8 +31,12 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** Ciclo de vida de eventos: catálogo, calendario y transiciones de estado. */
@@ -40,7 +49,11 @@ public class EventService {
     private static final int HORAS_DESPUES = 2;
     private static final int HORAS_RETENCION = 24;
     static final int MAX_EVENT_CAPACITY = 500;
+    static final int DEFAULT_PAGE_SIZE = 20;
+    static final int MAX_PAGE_SIZE = 50;
     static final List<EventStatus> CATALOG_STATUSES = List.of(EventStatus.draft, EventStatus.active);
+    static final List<EventStatus> ALL_STATUSES = List.of(
+            EventStatus.draft, EventStatus.active, EventStatus.cancelled, EventStatus.finished);
     private static final DateTimeFormatter FECHA_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter HORA_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -51,11 +64,10 @@ public class EventService {
     private final StaffNotificationService staffNotificationService;
     private final QuizEligibilityService quizEligibilityService;
 
-    /** Lista todos los eventos tras actualizar estados (activa/finaliza/elimina). */
-    @Transactional
+    /** Lista todos los eventos. Las transiciones de estado las aplica el scheduler. */
+    @Transactional(readOnly = true)
     public List<EventResponse> getAllEvents() {
-        procesarEstadosEventos();
-        return eventRepository.findAll().stream().map(this::convertToResponse).collect(Collectors.toList());
+        return convertAll(eventRepository.findAll());
     }
 
     /** Obtiene un evento por ID; lanza si no existe. */
@@ -68,46 +80,83 @@ public class EventService {
 
     /**
      * Eventos vigentes para consultar/inscribirse: draft (recién creados) y active.
-     * Pasan a active el día y hora del evento; finished se elimina 24 h después.
-     * Cancelled permanece 2 h y luego se elimina.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public List<EventResponse> getAvailableEvents() {
-        procesarEstadosEventos();
         LocalDate today = LocalDate.now(ZONA);
-        return eventRepository.findByStatusInOrderByEventDateAscEventTimeAsc(CATALOG_STATUSES).stream()
+        return convertAll(eventRepository.findByStatusInOrderByEventDateAscEventTimeAsc(CATALOG_STATUSES).stream()
                 .filter(event -> event.getEventDate() != null && !event.getEventDate().isBefore(today))
-                .map(this::convertToResponse)
-                .collect(Collectors.toList());
+                .toList());
+    }
+
+    /**
+     * Página de eventos para catálogo y gestión. availableOnly limita a draft/active futuros.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<EventResponse> pageEvents(
+            String query,
+            LocalDate fromDate,
+            LocalDate toDate,
+            boolean availableOnly,
+            String createdBy,
+            int page,
+            int size) {
+        if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
+            throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
+        }
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        int safePage = Math.max(page, 0);
+        LocalDate from = fromDate;
+        LocalDate to = toDate;
+        Collection<EventStatus> statuses = availableOnly ? CATALOG_STATUSES : ALL_STATUSES;
+        if (availableOnly) {
+            LocalDate today = LocalDate.now(ZONA);
+            if (from == null || from.isBefore(today)) {
+                from = today;
+            }
+        }
+        String q = query == null ? "" : query.trim();
+        String owner = createdBy == null ? "" : createdBy.trim();
+        Pageable pageable = PageRequest.of(
+                safePage,
+                safeSize,
+                Sort.by("eventDate").ascending().and(Sort.by("eventTime").ascending()));
+        Page<Event> result = eventRepository.searchEventsPage(q, statuses, from, to, owner, pageable);
+        return PageResponse.of(result, convertAll(result.getContent()));
     }
 
     /**
      * Calendario de eventos visibles (draft y active), opcionalmente filtrado por rango.
+     * Sin rango, limita a 180 días desde hoy para no devolver el histórico entero.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public List<CalendarEventResponse> getCalendar(LocalDate fromDate, LocalDate toDate) {
-        procesarEstadosEventos();
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
         }
-        return eventRepository.findCalendarEvents(CATALOG_STATUSES, fromDate, toDate).stream()
-                .map(this::convertToCalendarResponse)
+        LocalDate from = fromDate;
+        LocalDate to = toDate;
+        if (from == null && to == null) {
+            from = LocalDate.now(ZONA);
+            to = from.plusDays(180);
+        }
+        List<Event> events = eventRepository.findCalendarEvents(CATALOG_STATUSES, from, to);
+        Map<Integer, Sport> sports = sportsById(events.stream().map(Event::getSportId).collect(Collectors.toSet()));
+        return events.stream()
+                .map(event -> convertToCalendarResponse(event, sports.get(event.getSportId())))
                 .collect(Collectors.toList());
     }
 
     /**
      * Búsqueda de eventos draft/active por texto y rango de fechas. Sin coincidencias → lista vacía.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public List<EventResponse> searchEvents(String query, LocalDate fromDate, LocalDate toDate) {
-        procesarEstadosEventos();
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final.");
         }
         String q = query == null ? "" : query.trim();
-        return eventRepository.searchEvents(q, CATALOG_STATUSES, fromDate, toDate).stream()
-                .map(this::convertToResponse)
-                .collect(Collectors.toList());
+        return convertAll(eventRepository.searchEvents(q, CATALOG_STATUSES, fromDate, toDate));
     }
 
     /**
@@ -542,7 +591,30 @@ public class EventService {
 
     /** Convierte el evento a DTO de detalle, con portada por defecto si falta. */
     private EventResponse convertToResponse(Event event) {
-        Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
+        return convertToResponse(event, sportRepository.findById(event.getSportId()).orElse(null));
+    }
+
+    private List<EventResponse> convertAll(List<Event> events) {
+        Map<Integer, Sport> sports = sportsById(events.stream().map(Event::getSportId).collect(Collectors.toSet()));
+        return events.stream()
+                .map(event -> convertToResponse(event, sports.get(event.getSportId())))
+                .collect(Collectors.toList());
+    }
+
+    private Map<Integer, Sport> sportsById(Set<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<Sport> found = sportRepository.findAllById(ids);
+        if (found == null || found.isEmpty()) {
+            return Map.of();
+        }
+        return found.stream()
+                .filter(sport -> sport.getId() != null)
+                .collect(Collectors.toMap(Sport::getId, Function.identity(), (a, b) -> a));
+    }
+
+    private EventResponse convertToResponse(Event event, Sport sport) {
         String sportName = sport != null ? sport.getName() : "N/A";
         String imageUrl = event.getImageUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
@@ -570,8 +642,7 @@ public class EventService {
     }
 
     /** Convierte el evento a DTO de calendario. */
-    private CalendarEventResponse convertToCalendarResponse(Event event) {
-        Sport sport = sportRepository.findById(event.getSportId()).orElse(null);
+    private CalendarEventResponse convertToCalendarResponse(Event event, Sport sport) {
         return CalendarEventResponse.builder()
                 .id(event.getId())
                 .title(event.getName())

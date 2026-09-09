@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +57,8 @@ class EventServiceTest {
         request.setSportId(1);
         request.setName("Torneo");
         request.setMaxCapacity(501);
+        request.setEventDate(LocalDate.now().plusDays(10));
+        request.setEventTime(LocalTime.of(10, 0));
 
         IllegalStateException error = assertThrows(
                 IllegalStateException.class,
@@ -73,7 +76,7 @@ class EventServiceTest {
                 ResourceNotFoundException.class,
                 () -> eventService.getEventById("missing")
         );
-        assertTrue(error.getMessage().contains("missing"));
+        assertTrue(error.getMessage().contains("Evento no encontrado"));
     }
 
     @Test
@@ -117,7 +120,6 @@ class EventServiceTest {
 
     @Test
     void calendarReturnsEmptyWhenRangeHasNoEvents() {
-        stubStatusTransitions();
         LocalDate from = LocalDate.of(2099, 1, 1);
         LocalDate to = LocalDate.of(2099, 1, 31);
         when(eventRepository.findCalendarEvents(EventService.CATALOG_STATUSES, from, to)).thenReturn(List.of());
@@ -158,7 +160,6 @@ class EventServiceTest {
 
     @Test
     void getAvailableEventsIncludesDraftUpcomingEvents() {
-        stubStatusTransitions();
         LocalDate tomorrow = LocalDate.now().plusDays(1);
         Event draft = Event.builder()
                 .id("draft-1")
@@ -183,7 +184,7 @@ class EventServiceTest {
 
         when(eventRepository.findByStatusInOrderByEventDateAscEventTimeAsc(EventService.CATALOG_STATUSES))
                 .thenReturn(List.of(draft, pastDraft));
-        when(sportRepository.findById(1)).thenReturn(Optional.of(Sport.builder().id(1).name("Natación").build()));
+        when(sportRepository.findAllById(any())).thenReturn(List.of(Sport.builder().id(1).name("Natación").build()));
 
         var available = eventService.getAvailableEvents();
 
@@ -192,9 +193,38 @@ class EventServiceTest {
         assertEquals("draft", available.get(0).getStatus());
     }
 
+    @Test
+    void pageEventsReturnsRequestedSlice() {
+        Event draft = Event.builder()
+                .id("draft-1")
+                .sportId(1)
+                .name("Waterpolo")
+                .eventDate(LocalDate.now().plusDays(1))
+                .eventTime(LocalTime.of(7, 0))
+                .status(EventStatus.draft)
+                .maxCapacity(20)
+                .availableCapacity(20)
+                .build();
+        org.springframework.data.domain.Page<Event> page = new org.springframework.data.domain.PageImpl<>(
+                List.of(draft),
+                org.springframework.data.domain.PageRequest.of(0, 12),
+                1
+        );
+        when(eventRepository.searchEventsPage(any(), any(), nullable(LocalDate.class), nullable(LocalDate.class), any(), any())).thenReturn(page);
+        when(sportRepository.findAllById(any())).thenReturn(List.of(Sport.builder().id(1).name("Natación").build()));
+
+        var result = eventService.pageEvents("water", null, null, true, null, 0, 12);
+
+        assertEquals(1, result.getContent().size());
+        assertEquals("draft-1", result.getContent().get(0).getId());
+        assertEquals(1, result.getTotalElements());
+        assertTrue(result.isFirst());
+    }
+
     private void stubStatusTransitions() {
         when(eventRepository.findByStatus(EventStatus.draft)).thenReturn(Collections.emptyList());
         when(eventRepository.findByStatus(EventStatus.active)).thenReturn(Collections.emptyList());
+        when(eventRepository.findByStatus(EventStatus.cancelled)).thenReturn(Collections.emptyList());
         when(eventRepository.findByStatus(EventStatus.finished)).thenReturn(Collections.emptyList());
     }
 }

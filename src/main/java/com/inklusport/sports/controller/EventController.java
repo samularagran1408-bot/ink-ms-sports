@@ -4,6 +4,7 @@ import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventResponse;
 import com.inklusport.sports.dto.EventUpdateRequest;
+import com.inklusport.sports.dto.PageResponse;
 import com.inklusport.sports.service.EventService;
 import com.inklusport.sports.repository.EventRepository;
 import com.inklusport.sports.enums.EventStatus;
@@ -68,6 +69,28 @@ public class EventController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ResponseEntity.ok(eventService.searchEvents(q, from, to));
+    }
+
+    /**
+     * Página de eventos (catálogo o gestión). size máximo 50.
+     */
+    @GetMapping("/page")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<PageResponse<EventResponse>> getEventsPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "false") boolean availableOnly,
+            @RequestParam(required = false) String createdBy) {
+        return ResponseEntity.ok(eventService.pageEvents(q, from, to, availableOnly, createdBy, page, size));
+    }
+
+    @GetMapping("/count")
+    @PreAuthorize("permitAll()")
+    public ResponseEntity<Long> countEvents() {
+        return ResponseEntity.ok(eventRepository.count());
     }
 
     @GetMapping("/active/count")
