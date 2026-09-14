@@ -1,5 +1,6 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.client.SubscriptionsServiceClient;
 import com.inklusport.sports.client.UserServiceClient;
 import com.inklusport.sports.dto.FutureRegistrationsCheckResponse;
 import com.inklusport.sports.dto.RegistrationRequest;
@@ -38,10 +39,33 @@ public class RegistrationService {
     private final StaffNotificationService staffNotificationService;
     private final UserIdentityService userIdentityService;
     private final UserServiceClient userServiceClient;
+    private final SubscriptionsServiceClient subscriptionsServiceClient;
 
     /** Inscribe al usuario o lo pone en waitlist; persiste cupo y notifica. */
     @Transactional
     public RegistrationResponse registerToEvent(RegistrationRequest request) {
+        return registerToEvent(request, false);
+    }
+
+    @Transactional
+    public RegistrationResponse confirmPaidRegistration(String userId, String eventId) {
+        RegistrationRequest request = new RegistrationRequest();
+        request.setUserId(userId);
+        request.setEventId(eventId);
+
+        Set<String> aliases = userIdentityService.identityAliases(userId);
+        aliases.add(userId);
+        for (String alias : aliases) {
+            var existente = registrationRepository.findByUserIdAndEventId(alias, eventId);
+            if (existente.isPresent()) {
+                Event event = eventRepository.findById(eventId).orElse(null);
+                return convertToResponse(existente.get(), "Inscripción confirmada por pago.", event, null, null, null);
+            }
+        }
+        return registerToEvent(request, true);
+    }
+
+    private RegistrationResponse registerToEvent(RegistrationRequest request, boolean paidConfirmation) {
         Event event = eventRepository.findByIdForUpdate(request.getEventId())
             .orElseThrow(() -> new IllegalArgumentException("Evento no encontrado"));
 
@@ -50,6 +74,9 @@ public class RegistrationService {
         }
         if (event.getStatus() == EventStatus.finished) {
             throw new IllegalStateException("No es posible inscribirse a un evento finalizado.");
+        }
+        if (!paidConfirmation && esEventoPago(request.getEventId())) {
+            throw new IllegalStateException("Este evento requiere pago. Completa el checkout para inscribirte.");
         }
 
         String userId = userIdentityService.resolveCanonicalUserId(request.getUserId());
@@ -408,6 +435,20 @@ public class RegistrationService {
                 .waitlistPosition(reg.getWaitlistPosition())
                 .message(statusMessage)
                 .build();
+    }
+
+    private boolean esEventoPago(String eventoId) {
+        try {
+            Map<String, Object> config = subscriptionsServiceClient.configuracionPago(eventoId);
+            if (config == null) {
+                return false;
+            }
+            Object esPago = config.get("esPago");
+            return Boolean.TRUE.equals(esPago) || "true".equalsIgnoreCase(String.valueOf(esPago));
+        } catch (Exception e) {
+            log.debug("No se consultó si el evento {} es de pago: {}", eventoId, e.getMessage());
+            return false;
+        }
     }
 
     /** Enriquece nombre, email y foto desde users-ms. */

@@ -1,5 +1,6 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.client.SubscriptionsServiceClient;
 import com.inklusport.sports.client.UserServiceClient;
 import com.inklusport.sports.entity.Event;
 import com.inklusport.sports.entity.EventRegistration;
@@ -39,6 +40,9 @@ class RegistrationServiceTest {
 
     @Mock
     private UserServiceClient userServiceClient;
+
+    @Mock
+    private SubscriptionsServiceClient subscriptionsServiceClient;
 
     @InjectMocks
     private RegistrationService registrationService;

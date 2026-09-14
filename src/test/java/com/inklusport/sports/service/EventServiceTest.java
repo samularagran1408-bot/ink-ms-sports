@@ -1,5 +1,6 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.client.SubscriptionsServiceClient;
 import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventUpdateRequest;
@@ -47,6 +48,9 @@ class EventServiceTest {
     private StaffNotificationService staffNotificationService;
     @Mock
     private QuizEligibilityService quizEligibilityService;
+
+    @Mock
+    private SubscriptionsServiceClient subscriptionsServiceClient;
 
     @InjectMocks
     private EventService eventService;

@@ -1,5 +1,6 @@
 package com.inklusport.sports.service;
 
+import com.inklusport.sports.client.SubscriptionsServiceClient;
 import com.inklusport.sports.dto.CalendarEventResponse;
 import com.inklusport.sports.dto.EventRequest;
 import com.inklusport.sports.dto.EventResponse;
@@ -63,6 +64,7 @@ public class EventService {
     private final EventRegistrationRepository eventRegistrationRepository;
     private final StaffNotificationService staffNotificationService;
     private final QuizEligibilityService quizEligibilityService;
+    private final SubscriptionsServiceClient subscriptionsServiceClient;
 
     /** Lista todos los eventos. Las transiciones de estado las aplica el scheduler. */
     @Transactional(readOnly = true)
@@ -190,6 +192,7 @@ public class EventService {
         quizEligibilityService.assertOrganizerQuizPassed(request.getCreatedBy());
         validateEventDateTime(request.getEventDate(), request.getEventTime());
         validateCapacity(request.getMaxCapacity());
+        assertPuedeCrearSegunPlan(request.getCreatedBy());
         Sport sport = sportRepository.findById(request.getSportId())
                 .orElseThrow(() -> new ResourceNotFoundException("Deporte no encontrado"));
         String imageUrl = request.getImageUrl();
@@ -212,6 +215,7 @@ public class EventService {
                 .status(EventStatus.draft)
                 .build();
         Event saved = eventRepository.save(event);
+        registrarEventoEnPlan(request.getCreatedBy());
         procesarEstadosEventos();
         return convertToResponse(eventRepository.findById(saved.getId()).orElse(saved));
     }
@@ -653,5 +657,38 @@ public class EventService {
                 .availableCapacity(event.getAvailableCapacity())
                 .maxCapacity(event.getMaxCapacity())
                 .build();
+    }
+
+    private void assertPuedeCrearSegunPlan(String organizadorId) {
+        if (organizadorId == null || organizadorId.isBlank()) {
+            return;
+        }
+        try {
+            var cupo = subscriptionsServiceClient.puedeCrearEvento(organizadorId);
+            if (cupo != null && !cupo.isPuedeCrear()) {
+                Integer limite = cupo.getLimiteEventosMes();
+                String plan = cupo.getPlanNombre() != null ? cupo.getPlanNombre() : "tu plan";
+                throw new IllegalStateException(
+                        "Has alcanzado el límite de eventos de " + plan
+                                + (limite != null ? " (" + limite + " al mes)" : "")
+                                + ". Mejora tu suscripción para crear más eventos.");
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("No se pudo validar el cupo de plan para {}: {}", organizadorId, e.getMessage());
+        }
+    }
+
+    private void registrarEventoEnPlan(String organizadorId) {
+        if (organizadorId == null || organizadorId.isBlank()) {
+            return;
+        }
+        try {
+            subscriptionsServiceClient.registrarEventoCreado(organizadorId);
+        } catch (Exception e) {
+            log.warn("No se pudo registrar el evento creado en suscripciones para {}: {}",
+                    organizadorId, e.getMessage());
+        }
     }
 }

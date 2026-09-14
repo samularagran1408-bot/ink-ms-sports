@@ -37,6 +37,10 @@ users:
   service:
     url: http://localhost:3002
 
+subscriptions:
+  service:
+    url: ${SUBSCRIPTIONS_SERVICE_URL:http://localhost:3005}
+
 accessibility:
   service:
     url: http://localhost:3004
