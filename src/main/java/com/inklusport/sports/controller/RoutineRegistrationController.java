@@ -1,5 +1,6 @@
 package com.inklusport.sports.controller;
 
+import com.inklusport.sports.dto.RoutineAttendanceRequest;
 import com.inklusport.sports.dto.RoutineRegistrationRequest;
 import com.inklusport.sports.dto.RoutineRegistrationResponse;
 import com.inklusport.sports.service.RoutineRegistrationService;
@@ -54,5 +55,22 @@ public class RoutineRegistrationController {
     @PreAuthorize("permitAll()")
     public ResponseEntity<List<RoutineRegistrationResponse>> byUser(@PathVariable String userId) {
         return ResponseEntity.ok(registrationService.byUser(userId));
+    }
+
+    @PostMapping("/{id}/attendance")
+    @PreAuthorize("hasRole('COACH') or hasRole('ADMIN') or hasRole('ENTRENADOR')")
+    public ResponseEntity<?> markAttendance(
+            @PathVariable String id,
+            @RequestBody(required = false) RoutineAttendanceRequest request
+    ) {
+        try {
+            boolean attended = request == null || request.getAttended() == null || Boolean.TRUE.equals(request.getAttended());
+            return ResponseEntity.ok(registrationService.markAttendance(id, attended));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "ERROR",
+                    "message", e.getMessage()
+            ));
+        }
     }
 }

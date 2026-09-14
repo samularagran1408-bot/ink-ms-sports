@@ -10,6 +10,10 @@ import java.time.LocalDateTime;
 public class RoutineRegistrationResponse {
     private String id;
     private String userId;
+    private String userFullName;
+    private String userEmail;
+    private String userProfilePicture;
+    private String userDisability;
     private String routineId;
     private String routineName;
     private String trainerId;

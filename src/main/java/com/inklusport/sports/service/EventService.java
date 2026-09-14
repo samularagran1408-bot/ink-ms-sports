@@ -25,6 +25,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -676,7 +678,9 @@ public class EventService {
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("No se pudo validar el cupo de plan para {}: {}", organizadorId, e.getMessage());
+            log.error("No se pudo validar el cupo de plan para {}: {}", organizadorId, e.getMessage());
+            throw new IllegalStateException(
+                    "No se pudo validar el cupo de tu plan. Intenta de nuevo en unos momentos.");
         }
     }
 
@@ -684,11 +688,23 @@ public class EventService {
         if (organizadorId == null || organizadorId.isBlank()) {
             return;
         }
-        try {
-            subscriptionsServiceClient.registrarEventoCreado(organizadorId);
-        } catch (Exception e) {
-            log.warn("No se pudo registrar el evento creado en suscripciones para {}: {}",
-                    organizadorId, e.getMessage());
+        Runnable registrar = () -> {
+            try {
+                subscriptionsServiceClient.registrarEventoCreado(organizadorId);
+            } catch (Exception e) {
+                log.error("No se pudo registrar el evento creado en suscripciones para {}: {}",
+                        organizadorId, e.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    registrar.run();
+                }
+            });
+            return;
         }
+        registrar.run();
     }
 }
