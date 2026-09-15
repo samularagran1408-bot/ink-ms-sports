@@ -45,5 +45,10 @@ accessibility:
   service:
     url: http://localhost:3004
 
+# Dueño del modo competencia (RF53): se consulta antes de registrar asistencia.
+ai:
+  service:
+    url: ${AI_SERVICE_URL:http://localhost:3008}
+
 notifications:
   admin-emails: ${NOTIFICATION_ADMIN_EMAILS:}

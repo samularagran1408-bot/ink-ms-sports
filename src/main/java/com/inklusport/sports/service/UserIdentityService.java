@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Resuelve identidades de usuario de forma canónica (UUID) y expone alias
@@ -21,7 +22,11 @@ import java.util.Set;
 @Slf4j
 public class UserIdentityService {
 
+    private static final long CACHE_TTL_MS = 60_000L;
+
     private final UserServiceClient userServiceClient;
+    private final ConcurrentHashMap<String, CacheEntry> idByEmail = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CacheEntry> emailById = new ConcurrentHashMap<>();
 
     /** Principal JWT actual o null si es anónimo/ausente. */
     public String currentPrincipal() {
@@ -127,6 +132,12 @@ public class UserIdentityService {
             aliases.add(principal);
         }
 
+        boolean hasUuid = aliases.stream().anyMatch(UserIdentityService::isUuidLike);
+        boolean hasEmail = aliases.stream().anyMatch(a -> a != null && a.contains("@"));
+        if (hasUuid && hasEmail) {
+            return aliases;
+        }
+
         if (value.contains("@")) {
             String id = resolveIdByEmail(value);
             if (id != null) {
@@ -154,6 +165,11 @@ public class UserIdentityService {
         if (email == null || !email.contains("@")) {
             return null;
         }
+        String key = email.trim().toLowerCase();
+        CacheEntry cached = idByEmail.get(key);
+        if (cached != null && cached.valid()) {
+            return cached.value();
+        }
         try {
             Map<String, String> resolved = userServiceClient.getUserIdByEmail(email);
             if (resolved == null) {
@@ -163,7 +179,9 @@ public class UserIdentityService {
             if (id == null || id.isBlank() || "fallback-id".equalsIgnoreCase(id)) {
                 return null;
             }
-            return id.trim();
+            String trimmed = id.trim();
+            idByEmail.put(key, CacheEntry.of(trimmed, CACHE_TTL_MS));
+            return trimmed;
         } catch (Exception e) {
             log.debug("No se resolvió UUID para {}: {}", email, e.getMessage());
             return null;
@@ -174,6 +192,10 @@ public class UserIdentityService {
     private String resolveEmailById(String userId) {
         if (userId == null || userId.isBlank() || userId.contains("@")) {
             return null;
+        }
+        CacheEntry cached = emailById.get(userId);
+        if (cached != null && cached.valid()) {
+            return cached.value();
         }
         try {
             Map<String, Object> user = userServiceClient.getUserByIdInternal(userId);
@@ -191,6 +213,7 @@ public class UserIdentityService {
             if (!value.contains("@") || value.startsWith("no-disponible@")) {
                 return null;
             }
+            emailById.put(userId, CacheEntry.of(value, CACHE_TTL_MS));
             return value;
         } catch (Exception e) {
             log.debug("No se resolvió email para {}: {}", userId, e.getMessage());
@@ -205,5 +228,15 @@ public class UserIdentityService {
         }
         String trimmed = value.trim();
         return trimmed.length() >= 32 && !trimmed.contains("@") && !trimmed.contains(" ");
+    }
+
+    private record CacheEntry(String value, long expiresAt) {
+        static CacheEntry of(String value, long ttlMs) {
+            return new CacheEntry(value, System.currentTimeMillis() + ttlMs);
+        }
+
+        boolean valid() {
+            return value != null && System.currentTimeMillis() < expiresAt;
+        }
     }
 }

@@ -15,12 +15,15 @@ import com.inklusport.sports.repository.EventRepository;
 import com.inklusport.sports.util.QrCodeParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap; /** Permite ejecutar CRUDS de forma rápida */
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +40,7 @@ public class EventAttendanceService {
     private final UserServiceClient userServiceClient;
     private final UserIdentityService userIdentityService;
     private final StaffNotificationService staffNotificationService;
+    private final CompetitionModeService competitionModeService;
 
     /**
      * Registra asistencia manual/admin; exige quiz de staff (organizador o entrenador).
@@ -166,16 +170,45 @@ public class EventAttendanceService {
             }
         }
 
-        notifyAttendance(event, registration);
+        UserNames atleta = resolveUserNames(registration.getUserId());
+        notifyAttendance(event, registration, atleta);
+        sumarProgresoCompetencia(event, registration, atleta.email());
         return "Asistencia confirmada exitosamente. Código de registro: " + saved.getId();
     }
 
+    /**
+     * Pide al asistente que el check-in sume al plan de competencia del atleta.
+     *
+     * <p>El token se lee aquí, en el hilo de la petición, porque el envío sale
+     * en otro hilo para no retrasar la respuesta del check-in.
+     */
+    private void sumarProgresoCompetencia(Event event, EventRegistration registration, String athleteEmail) {
+        try {
+            competitionModeService.registerEventProgress(
+                    registration.getUserId(),
+                    athleteEmail,
+                    registration.getEventId(),
+                    event != null ? event.getName() : null,
+                    currentAuthorization()
+            );
+        } catch (Exception e) {
+            log.warn("No se pudo encolar el progreso del check-in {}: {}", registration.getId(), e.getMessage());
+        }
+    }
+
+    /** Cabecera Authorization de la petición en curso, o null si no hay. */
+    private String currentAuthorization() {
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs)) {
+            return null;
+        }
+        return attrs.getRequest().getHeader(HttpHeaders.AUTHORIZATION);
+    }
+
     /** Notifica al atleta y al organizador (o admins) el check-in registrado. */
-    private void notifyAttendance(Event event, EventRegistration registration) {
+    private void notifyAttendance(Event event, EventRegistration registration, UserNames names) {
         try {
             String eventName = event != null && event.getName() != null ? event.getName() : "un evento";
             String eventId = registration.getEventId();
-            UserNames names = resolveUserNames(registration.getUserId());
             String athlete = names.fullName != null && !names.fullName.isBlank()
                     ? names.fullName
                     : (names.email != null ? names.email : "Un atleta");

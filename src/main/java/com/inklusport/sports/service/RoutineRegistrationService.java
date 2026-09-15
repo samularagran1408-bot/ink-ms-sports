@@ -33,6 +33,7 @@ public class RoutineRegistrationService {
     private final UserIdentityService userIdentityService;
     private final UserServiceClient userServiceClient;
     private final QuizEligibilityService quizEligibilityService;
+    private final CompetitionModeService competitionModeService;
 
     /** Inscribe o reactiva al atleta; descuenta cupo y notifica (lleno/casi lleno). */
     @Transactional
@@ -171,6 +172,9 @@ public class RoutineRegistrationService {
     /**
      * Marca o desmarca asistencia a la sesión ({@code completed} / {@code active}).
      * No cambia el cupo: el atleta sigue inscrito.
+     *
+     * <p>Registrarla exige que el atleta tenga el modo competencia activo (RF53);
+     * quitarla siempre se puede, para poder corregir un error.
      */
     @Transactional
     public RoutineRegistrationResponse markAttendance(String registrationId, boolean attended) {
@@ -185,18 +189,26 @@ public class RoutineRegistrationService {
             throw new IllegalStateException("No puedes marcar asistencia de una inscripción cancelada.");
         }
 
+        // El perfil se resuelve una sola vez y se reutiliza en la respuesta.
+        Map<String, UserSnapshot> perfiles = new HashMap<>();
+        if (attended) {
+            UserSnapshot atleta = resolveUser(reg.getUserId(), perfiles);
+            competitionModeService.assertActive(reg.getUserId(), atleta.email(), atleta.fullName());
+        }
+
         RoutineRegistrationStatus next = attended
                 ? RoutineRegistrationStatus.completed
                 : RoutineRegistrationStatus.active;
         if (reg.getStatus() == next) {
-            return toResponse(reg, routine, attended ? "Asistencia ya registrada." : "Asistencia ya desmarcada.", null);
+            String yaEstaba = attended ? "Asistencia ya registrada." : "Asistencia ya desmarcada.";
+            return toResponse(reg, routine, yaEstaba, perfiles);
         }
         reg.setStatus(next);
         RoutineRegistration saved = registrationRepository.saveAndFlush(reg);
         String message = attended
                 ? "Asistencia registrada en la sesión."
                 : "Asistencia desmarcada; el atleta sigue inscrito.";
-        return toResponse(saved, routine, message, null);
+        return toResponse(saved, routine, message, perfiles);
     }
 
     /** Notifica al atleta y al entrenador la nueva inscripción. */

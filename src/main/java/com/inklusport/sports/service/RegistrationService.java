@@ -15,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** Inscripciones a eventos, lista de espera y notificaciones asociadas. */
 @Service
@@ -145,22 +148,21 @@ public class RegistrationService {
             throw new IllegalStateException("El usuario ya se encuentra registrado.");
         }
 
-        sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
-
-        notifyOrganizerAboutRegistration(event, notifyTarget, confirmed, registration.getWaitlistPosition());
-
-        if (confirmed && event.getAvailableCapacity() != null && event.getAvailableCapacity() == 0) {
-            /**
-             * Fan-out a admins incluido en notifyOrganizer
-             */
-            staffNotificationService.notifyOrganizer(
-                    event.getCreatedBy(),
-                    "event_full",
-                    "Evento aforo completo",
-                    "El evento \"" + event.getName() + "\" ya no tiene cupos disponibles.",
-                    event.getId()
-            );
-        }
+        Event evento = event;
+        Integer waitlistPos = registration.getWaitlistPosition();
+        afterCommit(() -> {
+            sendNotification(notifyTarget, notificationType, notificationTitle, notificationBody, request.getEventId());
+            notifyOrganizerAboutRegistration(evento, notifyTarget, confirmed, waitlistPos);
+            if (confirmed && evento.getAvailableCapacity() != null && evento.getAvailableCapacity() == 0) {
+                staffNotificationService.notifyOrganizer(
+                        evento.getCreatedBy(),
+                        "event_full",
+                        "Evento aforo completo",
+                        "El evento \"" + evento.getName() + "\" ya no tiene cupos disponibles.",
+                        evento.getId()
+                );
+            }
+        });
 
         return convertToResponse(saved, statusMessage, event, null, null, null);
     }
@@ -187,13 +189,14 @@ public class RegistrationService {
         registrationRepository.delete(currentReg);
 
         if (event != null) {
-            staffNotificationService.notifyOrganizer(
-                    event.getCreatedBy(),
+            Event snapshot = event;
+            afterCommit(() -> staffNotificationService.notifyOrganizer(
+                    snapshot.getCreatedBy(),
                     "event_registration_cancelled",
                     "Inscripción cancelada",
-                    "El usuario " + cancelledUser + " canceló su inscripción al evento \"" + event.getName() + "\".",
+                    "El usuario " + cancelledUser + " canceló su inscripción al evento \"" + snapshot.getName() + "\".",
                     eventId
-            );
+            ));
         }
 
         if (posicionEliminada == null) {
@@ -264,18 +267,19 @@ public class RegistrationService {
         String notificationBody = "Felicidades. Has pasado de la lista de espera y ahora estás inscrito al evento: "
                 + getEventName(eventId) + ". ¡Cupo asegurado!";
 
-        sendNotification(promotedReg.getUserId(), notificationType, notificationTitle, notificationBody, eventId);
-
-        eventRepository.findById(eventId).ifPresent(event ->
-                staffNotificationService.notifyOrganizer(
-                        event.getCreatedBy(),
-                        "organizer_waitlist_promoted",
-                        "Cupo asignado desde waitlist",
-                        "El usuario " + promotedReg.getUserId() + " pasó de lista de espera a inscrito en \""
-                                + event.getName() + "\".",
-                        eventId
-                )
-        );
+        afterCommit(() -> {
+            sendNotification(promotedReg.getUserId(), notificationType, notificationTitle, notificationBody, eventId);
+            eventRepository.findById(eventId).ifPresent(event ->
+                    staffNotificationService.notifyOrganizer(
+                            event.getCreatedBy(),
+                            "organizer_waitlist_promoted",
+                            "Cupo asignado desde waitlist",
+                            "El usuario " + promotedReg.getUserId() + " pasó de lista de espera a inscrito en \""
+                                    + event.getName() + "\".",
+                            eventId
+                    )
+            );
+        });
     }
 
     /** Avisa al usuario que avanzó de posición en la lista de espera. */
@@ -293,7 +297,8 @@ public class RegistrationService {
                     + ". Si se libera un cupo, serás el siguiente en inscribirte."
                 : "Has subido a la posición " + position + " en la lista de espera del evento: " + eventName + ".";
 
-        sendNotification(registration.getUserId(), "waitlist_position_update", notificationTitle, notificationBody, eventId);
+        afterCommit(() -> sendNotification(
+                registration.getUserId(), "waitlist_position_update", notificationTitle, notificationBody, eventId));
     }
 
     /** Confirma el cupo ofertado desde waitlist y notifica. */
@@ -305,7 +310,7 @@ public class RegistrationService {
         String notificationTitle = "¡Cupo confirmado!";
         String notificationBody = "Has confirmado tu asistencia al evento. ¡Te esperamos!";
 
-        sendNotification(userId, notificationType, notificationTitle, notificationBody, eventId);
+        afterCommit(() -> sendNotification(userId, notificationType, notificationTitle, notificationBody, eventId));
     }
 
     /** Nombre del evento o un fallback genérico. */
@@ -360,9 +365,12 @@ public class RegistrationService {
             }
         }
 
+        List<EventRegistration> regs = new ArrayList<>(unique.values());
+        Map<String, Event> events = eventsById(regs.stream().map(EventRegistration::getEventId).collect(Collectors.toSet()));
+
         List<RegistrationResponse> responses = new ArrayList<>();
-        for (EventRegistration reg : unique.values()) {
-            Event event = eventRepository.findById(reg.getEventId()).orElse(null);
+        for (EventRegistration reg : regs) {
+            Event event = events.get(reg.getEventId());
             String status = reg.getWaitlistPosition() != null ? "WAITLIST" : "CONFIRMED";
             responses.add(convertToResponse(reg, status, event, null, null, null));
         }
@@ -391,9 +399,11 @@ public class RegistrationService {
 
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
+        List<EventRegistration> regs = new ArrayList<>(unique.values());
+        Map<String, Event> events = eventsById(regs.stream().map(EventRegistration::getEventId).collect(Collectors.toSet()));
         List<String> eventNames = new ArrayList<>();
-        for (EventRegistration reg : unique.values()) {
-            Event event = eventRepository.findById(reg.getEventId()).orElse(null);
+        for (EventRegistration reg : regs) {
+            Event event = events.get(reg.getEventId());
             if (event == null || event.getEventDate() == null) {
                 continue;
             }
@@ -449,6 +459,34 @@ public class RegistrationService {
             log.debug("No se consultó si el evento {} es de pago: {}", eventoId, e.getMessage());
             return false;
         }
+    }
+
+    /** Carga eventos por id en un solo round-trip. */
+    private Map<String, Event> eventsById(Set<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Event> byId = new LinkedHashMap<>();
+        for (Event event : eventRepository.findAllById(ids)) {
+            if (event != null && event.getId() != null) {
+                byId.put(event.getId(), event);
+            }
+        }
+        return byId;
+    }
+
+    /** Ejecuta la acción al confirmar la transacción para no bloquear la respuesta HTTP. */
+    private void afterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+        action.run();
     }
 
     /** Enriquece nombre, email y foto desde users-ms. */

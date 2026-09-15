@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * El quiz aprobado es el único requisito operativo para entrenador/organizador.
@@ -18,8 +19,12 @@ import java.util.Map;
 @Slf4j
 public class QuizEligibilityService {
 
+    private static final long CACHE_OK_MS = 60_000L;
+    private static final long CACHE_PENDING_MS = 5_000L;
+
     private final UserServiceClient userServiceClient;
     private final UserIdentityService userIdentityService;
+    private final ConcurrentHashMap<String, QuizCache> cache = new ConcurrentHashMap<>();
 
     /**
      * Exige trainerQuizPassed antes de gestionar rutinas.
@@ -29,8 +34,12 @@ public class QuizEligibilityService {
             return;
         }
         String userId = resolveUserId(trainerId);
-        Map<String, Object> user = loadProfile(userId);
-        if (!boolFlag(user, "trainerQuizPassed") && !boolFlag(user, "trainer_quiz_passed")) {
+        QuizCache cached = cache.get(userId);
+        if (cached != null && cached.valid() && cached.trainer()) {
+            return;
+        }
+        QuizCache flags = flagsOf(userId);
+        if (!flags.trainer()) {
             throw new IllegalStateException(
                     "Debes completar el quiz de aptitud de entrenador antes de gestionar rutinas o atletas."
             );
@@ -45,8 +54,12 @@ public class QuizEligibilityService {
             return;
         }
         String userId = resolveUserId(organizerId);
-        Map<String, Object> user = loadProfile(userId);
-        if (!boolFlag(user, "organizerQuizPassed") && !boolFlag(user, "organizer_quiz_passed")) {
+        QuizCache cached = cache.get(userId);
+        if (cached != null && cached.valid() && cached.organizer()) {
+            return;
+        }
+        QuizCache flags = flagsOf(userId);
+        if (!flags.organizer()) {
             throw new IllegalStateException(
                     "Debes completar el quiz de aptitud de organizador antes de gestionar eventos o inscritos."
             );
@@ -64,10 +77,13 @@ public class QuizEligibilityService {
         if (principal == null) {
             throw new IllegalStateException("Debes autenticarte para continuar.");
         }
-        Map<String, Object> user = loadProfile(resolveUserId(principal));
-        boolean organizer = boolFlag(user, "organizerQuizPassed") || boolFlag(user, "organizer_quiz_passed");
-        boolean trainer = boolFlag(user, "trainerQuizPassed") || boolFlag(user, "trainer_quiz_passed");
-        if (!organizer && !trainer) {
+        String userId = resolveUserId(principal);
+        QuizCache cached = cache.get(userId);
+        if (cached != null && cached.valid() && (cached.organizer() || cached.trainer())) {
+            return;
+        }
+        QuizCache flags = flagsOf(userId);
+        if (!flags.organizer() && !flags.trainer()) {
             throw new IllegalStateException(
                     "Debes completar el quiz de aptitud antes de gestionar inscritos o asistencia."
             );
@@ -102,6 +118,18 @@ public class QuizEligibilityService {
         } catch (Exception e) {
             return raw;
         }
+    }
+
+    private QuizCache flagsOf(String userId) {
+        Map<String, Object> user = loadProfile(userId);
+        boolean trainer = boolFlag(user, "trainerQuizPassed") || boolFlag(user, "trainer_quiz_passed");
+        boolean organizer = boolFlag(user, "organizerQuizPassed") || boolFlag(user, "organizer_quiz_passed");
+        long ttl = (trainer || organizer) ? CACHE_OK_MS : CACHE_PENDING_MS;
+        QuizCache flags = new QuizCache(trainer, organizer, System.currentTimeMillis() + ttl);
+        if (userId != null && !userId.isBlank()) {
+            cache.put(userId, flags);
+        }
+        return flags;
     }
 
     /**
@@ -146,5 +174,11 @@ public class QuizEligibilityService {
             return n.intValue() != 0;
         }
         return false;
+    }
+
+    private record QuizCache(boolean trainer, boolean organizer, long expiresAt) {
+        boolean valid() {
+            return System.currentTimeMillis() < expiresAt;
+        }
     }
 }

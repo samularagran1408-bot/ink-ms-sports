@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Notificaciones orientadas a staff (organizador, entrenador, admin).
@@ -32,6 +32,9 @@ public class StaffNotificationService {
 
     @Value("${notifications.admin-emails:}")
     private String adminEmails;
+
+    private final ConcurrentHashMap<String, CacheEntry> emailById = new ConcurrentHashMap<>();
+    private volatile CacheEntry adminEmailsCache = CacheEntry.empty();
 
     /** Envía una notificación al usuario (resuelve email); no lanza si falla. */
     public void notifyUser(String userIdOrEmail, String type, String title, String body, String eventId) {
@@ -87,6 +90,10 @@ public class StaffNotificationService {
 
     /** Une emails de config y rol ADMIN en users-ms. */
     private Set<String> resolveAdminEmails() {
+        CacheEntry cached = adminEmailsCache;
+        if (cached.valid() && cached.emails() != null) {
+            return new LinkedHashSet<>(cached.emails());
+        }
         Set<String> emails = new LinkedHashSet<>();
 
         if (adminEmails != null && !adminEmails.isBlank()) {
@@ -109,6 +116,7 @@ public class StaffNotificationService {
             log.debug("No se pudieron obtener emails ADMIN desde users-ms: {}", e.getMessage());
         }
 
+        adminEmailsCache = CacheEntry.emails(emails, 60_000L);
         return emails;
     }
 
@@ -138,11 +146,16 @@ public class StaffNotificationService {
         if (value.contains("@")) {
             return value;
         }
+        CacheEntry cached = emailById.get(value);
+        if (cached != null && cached.valid() && cached.value() != null) {
+            return cached.value();
+        }
         try {
             Map<String, Object> user = userServiceClient.getUserByIdInternal(value);
             if (user != null && user.get("email") != null) {
                 String email = String.valueOf(user.get("email"));
                 if (email.contains("@") && !email.startsWith("no-disponible")) {
+                    emailById.put(value, CacheEntry.value(email, 60_000L));
                     return email;
                 }
             }
@@ -154,6 +167,7 @@ public class StaffNotificationService {
             if (user != null && user.get("email") != null) {
                 String email = String.valueOf(user.get("email"));
                 if (email.contains("@") && !email.startsWith("no-disponible")) {
+                    emailById.put(value, CacheEntry.value(email, 60_000L));
                     return email;
                 }
             }
@@ -161,5 +175,23 @@ public class StaffNotificationService {
             log.debug("Fallback getUserById falló para {}: {}", value, e.getMessage());
         }
         return null;
+    }
+
+    private record CacheEntry(String value, Set<String> emails, long expiresAt) {
+        static CacheEntry empty() {
+            return new CacheEntry(null, null, 0L);
+        }
+
+        static CacheEntry value(String value, long ttlMs) {
+            return new CacheEntry(value, null, System.currentTimeMillis() + ttlMs);
+        }
+
+        static CacheEntry emails(Set<String> emails, long ttlMs) {
+            return new CacheEntry(null, Set.copyOf(emails), System.currentTimeMillis() + ttlMs);
+        }
+
+        boolean valid() {
+            return System.currentTimeMillis() < expiresAt;
+        }
     }
 }

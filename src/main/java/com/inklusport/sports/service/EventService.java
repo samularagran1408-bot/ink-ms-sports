@@ -182,7 +182,7 @@ public class EventService {
         event.setStatus(EventStatus.cancelled);
         event.setCancelledAt(ahora());
         Event saved = eventRepository.saveAndFlush(event);
-        notifyRegistrantsAboutCancellation(saved);
+        afterCommit(() -> notifyRegistrantsAboutCancellation(saved));
         return convertToResponse(saved);
     }
 
@@ -218,8 +218,7 @@ public class EventService {
                 .build();
         Event saved = eventRepository.save(event);
         registrarEventoEnPlan(request.getCreatedBy());
-        procesarEstadosEventos();
-        return convertToResponse(eventRepository.findById(saved.getId()).orElse(saved));
+        return convertToResponse(saved);
     }
 
     /**
@@ -296,12 +295,12 @@ public class EventService {
                 normalizeLocation(saved.getLocation()));
 
         if (dateChanged || locationChanged) {
-            notifyRegistrantsAboutScheduleOrLocationChange(
-                    saved, oldDate, oldTime, oldLocation, dateChanged, locationChanged);
+            Event snapshot = saved;
+            afterCommit(() -> notifyRegistrantsAboutScheduleOrLocationChange(
+                    snapshot, oldDate, oldTime, oldLocation, dateChanged, locationChanged));
         }
 
-        procesarEstadosEventos();
-        return convertToResponse(eventRepository.findById(saved.getId()).orElse(saved));
+        return convertToResponse(saved);
     }
 
     /** Notifica inscritos y admins un cambio de fecha, hora o lugar. */
@@ -688,23 +687,27 @@ public class EventService {
         if (organizadorId == null || organizadorId.isBlank()) {
             return;
         }
-        Runnable registrar = () -> {
+        afterCommit(() -> {
             try {
                 subscriptionsServiceClient.registrarEventoCreado(organizadorId);
             } catch (Exception e) {
                 log.error("No se pudo registrar el evento creado en suscripciones para {}: {}",
                         organizadorId, e.getMessage());
             }
-        };
+        });
+    }
+
+    /** Ejecuta la acción al confirmar la transacción para no bloquear la respuesta HTTP. */
+    private void afterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    registrar.run();
+                    action.run();
                 }
             });
             return;
         }
-        registrar.run();
+        action.run();
     }
 }
