@@ -5,7 +5,9 @@ import com.inklusport.sports.dto.BulkAttendanceRequest;
 import com.inklusport.sports.dto.QrAttendanceRequest;
 import com.inklusport.sports.service.EventAttendanceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -75,6 +77,11 @@ public class EventAttendanceController {
     public ResponseEntity<?> getQrInfo(@RequestParam String qrCode) {
         try {
             return ResponseEntity.ok(eventAttendanceService.getQrInfo(qrCode));
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "status", "FORBIDDEN",
+                    "message", e.getMessage()
+            ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "ERROR",
@@ -103,6 +110,11 @@ public class EventAttendanceController {
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
                     "message", successMessage
+            ));
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "status", "FORBIDDEN",
+                    "message", e.getMessage()
             ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(

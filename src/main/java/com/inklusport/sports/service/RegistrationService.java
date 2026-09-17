@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /** Inscripciones a eventos, lista de espera y notificaciones asociadas. */
@@ -43,6 +44,7 @@ public class RegistrationService {
     private final UserIdentityService userIdentityService;
     private final UserServiceClient userServiceClient;
     private final SubscriptionsServiceClient subscriptionsServiceClient;
+    private final Executor notificationExecutor;
 
     /** Inscribe al usuario o lo pone en waitlist; persiste cupo y notifica. */
     @Transactional
@@ -476,17 +478,31 @@ public class RegistrationService {
     }
 
     /** Ejecuta la acción al confirmar la transacción para no bloquear la respuesta HTTP. */
+    /**
+     * Ejecuta los avisos una vez confirmada la transacción y fuera del hilo de la
+     * petición: son notificaciones al atleta, al organizador y a los admins, y
+     * esperarlas dejaba al usuario mirando el botón mientras el admin ya había
+     * recibido la suya. Sólo se usa para efectos secundarios, nunca para datos
+     * que la respuesta necesite.
+     */
     private void afterCommit(Runnable action) {
+        Runnable aislada = () -> {
+            try {
+                action.run();
+            } catch (Exception e) {
+                log.error("Fallo enviando notificaciones tras la inscripción: {}", e.getMessage());
+            }
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    action.run();
+                    notificationExecutor.execute(aislada);
                 }
             });
             return;
         }
-        action.run();
+        notificationExecutor.execute(aislada);
     }
 
     /** Enriquece nombre, email y foto desde users-ms. */

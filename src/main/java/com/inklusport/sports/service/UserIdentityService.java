@@ -9,6 +9,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -115,6 +116,27 @@ public class UserIdentityService {
         }
 
         throw new IllegalArgumentException("trainerId es obligatorio sin autenticación.");
+    }
+
+    /**
+     * True si el usuario autenticado tiene alguno de los roles indicados, dados
+     * sin el prefijo ROLE_ (el filtro JWT ya traduce ORGANIZADOR → ORGANIZER).
+     */
+    public boolean hasAnyRole(String... roles) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return false;
+        }
+        Set<String> buscados = new LinkedHashSet<>();
+        for (String rol : roles) {
+            if (rol != null && !rol.isBlank()) {
+                buscados.add(rol.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return auth.getAuthorities().stream()
+                .map(a -> a.getAuthority() == null ? "" : a.getAuthority().toUpperCase(Locale.ROOT))
+                .map(a -> a.startsWith("ROLE_") ? a.substring("ROLE_".length()) : a)
+                .anyMatch(buscados::contains);
     }
 
     /** Conjunto UUID/email del usuario para búsquedas históricas. */

@@ -16,6 +16,7 @@ import com.inklusport.sports.util.QrCodeParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -42,6 +43,9 @@ public class EventAttendanceService {
     private final StaffNotificationService staffNotificationService;
     private final CompetitionModeService competitionModeService;
 
+    /** Únicos roles que pueden usar el QR de otra persona. */
+    private static final String[] ROLES_CHECKIN_AJENO = {"ADMIN", "ORGANIZER", "ORGANIZADOR"};
+
     /**
      * Registra asistencia manual/admin; exige quiz de staff (organizador o entrenador).
      */
@@ -62,6 +66,7 @@ public class EventAttendanceService {
     @Transactional
     public String recordAttendanceByQr(String qrCode, String verifiedBy, String notes) {
         EventRegistration registration = resolveRegistrationByQr(qrCode);
+        assertPuedeUsarQr(registration);
         return recordAttendanceInternal(registration.getId(), CheckInMethod.qr.name(), verifiedBy, notes);
     }
 
@@ -69,18 +74,10 @@ public class EventAttendanceService {
     @Transactional(readOnly = true)
     public QrAttendanceInfoResponse getQrInfo(String rawQrCode) {
         EventRegistration registration = resolveRegistrationByQr(rawQrCode);
+        assertPuedeUsarQr(registration);
         Event event = eventRepository.findById(registration.getEventId()).orElse(null);
 
-        boolean owned = false;
-        try {
-            String principal = userIdentityService.currentPrincipal();
-            if (principal != null) {
-                owned = userIdentityService.identityAliases(principal)
-                        .contains(registration.getUserId());
-            }
-        } catch (Exception e) {
-            log.debug("No se pudo resolver dueño del QR {}: {}", registration.getId(), e.getMessage());
-        }
+        boolean owned = esDelUsuarioActual(registration);
 
         return QrAttendanceInfoResponse.builder()
                 .qrCode(registration.getQrCode())
@@ -93,6 +90,39 @@ public class EventAttendanceService {
                 .attended(Boolean.TRUE.equals(registration.getAttended()))
                 .ownedByCurrentUser(owned)
                 .build();
+    }
+
+    /**
+     * El QR es personal: sólo lo usa su dueño, un admin o un organizador. Antes
+     * bastaba con estar autenticado, así que cualquier usuario con sesión podía
+     * consultar o registrar la asistencia de otra persona con su código.
+     */
+    private void assertPuedeUsarQr(EventRegistration registration) {
+        if (userIdentityService.hasAnyRole(ROLES_CHECKIN_AJENO)) {
+            return;
+        }
+        if (esDelUsuarioActual(registration)) {
+            return;
+        }
+        throw new AccessDeniedException(
+                "Este código QR pertenece a otra persona. Inicia sesión con esa cuenta "
+                        + "o pide a un administrador u organizador que registre la asistencia."
+        );
+    }
+
+    /** True si la inscripción es del usuario autenticado (UUID o email). */
+    private boolean esDelUsuarioActual(EventRegistration registration) {
+        try {
+            String principal = userIdentityService.currentPrincipal();
+            if (principal == null) {
+                return false;
+            }
+            return userIdentityService.identityAliases(principal).stream()
+                    .anyMatch(alias -> alias != null && alias.equalsIgnoreCase(registration.getUserId()));
+        } catch (Exception e) {
+            log.debug("No se pudo resolver dueño del QR {}: {}", registration.getId(), e.getMessage());
+            return false;
+        }
     }
 
     /** Extrae el código QR y resuelve la inscripción; lanza si es inválido. */
