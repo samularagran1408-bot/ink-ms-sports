@@ -44,8 +44,20 @@ class RegistrationServiceTest {
     @Mock
     private SubscriptionsServiceClient subscriptionsServiceClient;
 
+    @Mock
+    private AfterCommitRunner afterCommitRunner;
+
     @InjectMocks
     private RegistrationService registrationService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void runAfterCommitInline() {
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(0);
+            action.run();
+            return null;
+        }).when(afterCommitRunner).run(org.mockito.ArgumentMatchers.any());
+    }
 
     @Test
     void shouldPromoteFirstWaitlistUserAndNotifyEveryoneWhoMovedUp() {

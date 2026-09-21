@@ -42,6 +42,7 @@ public class EventAttendanceService {
     private final UserIdentityService userIdentityService;
     private final StaffNotificationService staffNotificationService;
     private final CompetitionModeService competitionModeService;
+    private final AfterCommitRunner afterCommitRunner;
 
     /** Únicos roles que pueden usar el QR de otra persona. */
     private static final String[] ROLES_CHECKIN_AJENO = {"ADMIN", "ORGANIZER", "ORGANIZADOR"};
@@ -188,42 +189,50 @@ public class EventAttendanceService {
         registration.setAttended(true);
         eventRegistrationRepository.save(registration);
 
-        if (!alreadyMarked) {
-            try {
-                userServiceClient.incrementEventsAttended(registration.getUserId());
-            } catch (Exception e) {
-                log.warn(
-                        "No se pudo incrementar events_attended para {}: {}",
-                        registration.getUserId(),
-                        e.getMessage()
-                );
+        // Side-effects (users Feign, avisos, IA) fuera del hilo HTTP tras el commit.
+        final boolean shouldIncrement = !alreadyMarked;
+        final String userId = registration.getUserId();
+        final String registrationIdSnapshot = registration.getId();
+        final String eventId = registration.getEventId();
+        final String eventName = event != null ? event.getName() : null;
+        final String authorization = currentAuthorization();
+
+        afterCommitRunner.run(() -> {
+            if (shouldIncrement) {
+                try {
+                    userServiceClient.incrementEventsAttended(userId);
+                } catch (Exception e) {
+                    log.warn(
+                            "No se pudo incrementar events_attended para {}: {}",
+                            userId,
+                            e.getMessage()
+                    );
+                }
             }
-        }
 
-        UserNames atleta = resolveUserNames(registration.getUserId());
-        notifyAttendance(event, registration, atleta);
-        sumarProgresoCompetencia(event, registration, atleta.email());
+            Event eventAfter = eventRepository.findById(eventId).orElse(null);
+            EventRegistration regAfter = eventRegistrationRepository.findById(registrationIdSnapshot).orElse(null);
+            if (regAfter == null) {
+                log.warn("Inscripción {} no encontrada tras commit de asistencia", registrationIdSnapshot);
+                return;
+            }
+
+            UserNames atleta = resolveUserNames(userId);
+            notifyAttendance(eventAfter != null ? eventAfter : event, regAfter, atleta);
+            try {
+                competitionModeService.registerEventProgress(
+                        userId,
+                        atleta.email(),
+                        eventId,
+                        eventAfter != null && eventAfter.getName() != null ? eventAfter.getName() : eventName,
+                        authorization
+                );
+            } catch (Exception e) {
+                log.warn("No se pudo encolar el progreso del check-in {}: {}", registrationIdSnapshot, e.getMessage());
+            }
+        });
+
         return "Asistencia confirmada exitosamente. Código de registro: " + saved.getId();
-    }
-
-    /**
-     * Pide al asistente que el check-in sume al plan de competencia del atleta.
-     *
-     * <p>El token se lee aquí, en el hilo de la petición, porque el envío sale
-     * en otro hilo para no retrasar la respuesta del check-in.
-     */
-    private void sumarProgresoCompetencia(Event event, EventRegistration registration, String athleteEmail) {
-        try {
-            competitionModeService.registerEventProgress(
-                    registration.getUserId(),
-                    athleteEmail,
-                    registration.getEventId(),
-                    event != null ? event.getName() : null,
-                    currentAuthorization()
-            );
-        } catch (Exception e) {
-            log.warn("No se pudo encolar el progreso del check-in {}: {}", registration.getId(), e.getMessage());
-        }
     }
 
     /** Cabecera Authorization de la petición en curso, o null si no hay. */

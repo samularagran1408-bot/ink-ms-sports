@@ -25,8 +25,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -67,6 +65,7 @@ public class EventService {
     private final StaffNotificationService staffNotificationService;
     private final QuizEligibilityService quizEligibilityService;
     private final SubscriptionsServiceClient subscriptionsServiceClient;
+    private final AfterCommitRunner afterCommitRunner;
 
     /** Lista todos los eventos. Las transiciones de estado las aplica el scheduler. */
     @Transactional(readOnly = true)
@@ -697,17 +696,8 @@ public class EventService {
         });
     }
 
-    /** Ejecuta la acción al confirmar la transacción para no bloquear la respuesta HTTP. */
+    /** Efectos secundarios tras commit, fuera del hilo HTTP. */
     private void afterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-            return;
-        }
-        action.run();
+        afterCommitRunner.run(action);
     }
 }
