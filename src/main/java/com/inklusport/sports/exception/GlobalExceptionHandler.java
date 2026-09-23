@@ -71,6 +71,17 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * @PreAuthorize / seguridad: sin rol COACH|ENTRENADOR|ADMIN el create de rutinas
+     * caía en el catch genérico como 500 "Access Denied".
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                "No tienes permiso para esta acción. Necesitas rol entrenador (ENTRENADOR) "
+                        + "y sesión iniciada de nuevo tras asignar el rol.");
+    }
+
+    /**
      * El "catch (Exception e)" definitivo: Captura cualquier error inesperado del sistema
      */
     @ExceptionHandler(Exception.class)
