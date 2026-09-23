@@ -138,7 +138,8 @@ public class RoutineRegistrationService {
                 routine.getTrainerId(),
                 "trainer_routine_cancelled",
                 "Cancelación en tu sesión",
-                "El usuario " + reg.getUserId() + " canceló su inscripción a \"" + routine.getName() + "\".",
+                "El usuario " + staffNotificationService.displayLabel(reg.getUserId())
+                        + " canceló su inscripción a \"" + routine.getName() + "\".",
                 null
         );
     }
@@ -224,7 +225,8 @@ public class RoutineRegistrationService {
                 routine.getTrainerId(),
                 "trainer_new_registration",
                 "Nueva inscripción en tu sesión",
-                "El usuario " + userId + " se inscribió a \"" + routine.getName() + "\". Cupos restantes: "
+                "El usuario " + staffNotificationService.displayLabel(userId)
+                        + " se inscribió a \"" + routine.getName() + "\". Cupos restantes: "
                         + routine.getAvailableCapacity() + ".",
                 null
         );

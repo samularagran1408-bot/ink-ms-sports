@@ -36,6 +36,21 @@ public class StaffNotificationService {
     private final ConcurrentHashMap<String, CacheEntry> emailById = new ConcurrentHashMap<>();
     private volatile CacheEntry adminEmailsCache = CacheEntry.empty();
 
+    /**
+     * Etiqueta legible para el cuerpo de la notificación: correo si se puede resolver,
+     * nunca un UUID crudo.
+     */
+    public String displayLabel(String userIdOrEmail) {
+        String email = resolveEmail(userIdOrEmail);
+        if (email != null && !email.isBlank()) {
+            return email;
+        }
+        if (userIdOrEmail != null && userIdOrEmail.contains("@")) {
+            return userIdOrEmail.trim();
+        }
+        return "un usuario";
+    }
+
     /** Envía una notificación al usuario (resuelve email); no lanza si falla. */
     public void notifyUser(String userIdOrEmail, String type, String title, String body, String eventId) {
         String recipient = resolveEmail(userIdOrEmail);

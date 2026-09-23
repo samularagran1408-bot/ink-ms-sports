@@ -193,7 +193,8 @@ public class RegistrationService {
                     snapshot.getCreatedBy(),
                     "event_registration_cancelled",
                     "Inscripción cancelada",
-                    "El usuario " + cancelledUser + " canceló su inscripción al evento \"" + snapshot.getName() + "\".",
+                    "El usuario " + staffNotificationService.displayLabel(cancelledUser)
+                            + " canceló su inscripción al evento \"" + snapshot.getName() + "\".",
                     eventId
             ));
         }
@@ -231,12 +232,13 @@ public class RegistrationService {
         if (event.getCreatedBy() == null || event.getCreatedBy().isBlank()) {
             return;
         }
+        String athleteLabel = staffNotificationService.displayLabel(athleteEmail);
         if (confirmed) {
             staffNotificationService.notifyOrganizer(
                     event.getCreatedBy(),
                     "organizer_new_registration",
                     "Nueva inscripción en tu evento",
-                    "El usuario " + athleteEmail + " se inscribió al evento \"" + event.getName() + "\". Cupos restantes: "
+                    "El usuario " + athleteLabel + " se inscribió al evento \"" + event.getName() + "\". Cupos restantes: "
                             + event.getAvailableCapacity() + ".",
                     event.getId()
             );
@@ -245,7 +247,7 @@ public class RegistrationService {
                     event.getCreatedBy(),
                     "organizer_waitlist_joined",
                     "Nueva persona en lista de espera",
-                    "El usuario " + athleteEmail + " entró a la lista de espera del evento \"" + event.getName()
+                    "El usuario " + athleteLabel + " entró a la lista de espera del evento \"" + event.getName()
                             + "\" (posición " + waitlistPos + ").",
                     event.getId()
             );
@@ -273,7 +275,8 @@ public class RegistrationService {
                             event.getCreatedBy(),
                             "organizer_waitlist_promoted",
                             "Cupo asignado desde waitlist",
-                            "El usuario " + promotedReg.getUserId() + " pasó de lista de espera a inscrito en \""
+                            "El usuario " + staffNotificationService.displayLabel(promotedReg.getUserId())
+                                    + " pasó de lista de espera a inscrito en \""
                                     + event.getName() + "\".",
                             eventId
                     )
